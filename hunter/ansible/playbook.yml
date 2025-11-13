@@ -3,7 +3,7 @@
   hosts: hunter
   become: yes
   vars_files:
-    - ../../secrets/vault-plaintext.yml
+    - ../../secrets/vault.yml
 
   tasks:
     - name: Validate database backup file exists (fail early)

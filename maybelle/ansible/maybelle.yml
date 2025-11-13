@@ -3,7 +3,7 @@
   hosts: all
 
   vars_files:
-    - ../../secrets/vault-plaintext.yml
+    - ../../secrets/vault.yml
 
   vars:
     jenkins_port: 8080
