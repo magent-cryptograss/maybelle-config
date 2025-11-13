@@ -78,25 +78,8 @@
       loop_control:
         loop_var: user
 
-    - name: Create backup user for maybelle access
-      user:
-        name: backupuser
-        shell: /bin/bash
-        create_home: yes
-
-    - name: Create .ssh directory for backupuser
-      file:
-        path: /home/backupuser/.ssh
-        state: directory
-        mode: '0700'
-        owner: backupuser
-        group: backupuser
-
-    - name: Install maybelle's public key for backupuser
-      authorized_key:
-        user: backupuser
-        key: "{{ maybelle_backup_ssh_key }}"
-        state: present
+    # Note: backupuser and SSH key are managed by maybelle during deployment
+    # See maybelle/jobs/deploy-hunter.groovy for key installation
 
     - name: Create backup directory
       file:

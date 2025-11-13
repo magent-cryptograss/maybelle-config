@@ -32,7 +32,6 @@ Secrets are stored in `secrets/vault-plaintext.yml` (gitignored). Required varia
 - `memory_lane_postgres_password` - PostgreSQL password
 - `justin_vscode_password` - Justin's code-server password
 - `rj_vscode_password` - R.J.'s code-server password
-- `maybelle_backup_ssh_key` - Maybelle's SSH public key for pulling database backups (non-privileged access)
 
 **Maybelle secrets:**
 - `maybelle_env` - Jenkins environment variables (multiline string)

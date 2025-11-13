@@ -40,6 +40,35 @@ pipelineJob('deploy-hunter') {
                             }
                         }
 
+                        stage('Install maybelle backup key on hunter') {
+                            steps {
+                                sh """
+                                    # Ensure backupuser exists and install maybelle's backup public key
+                                    ssh root@hunter.cryptograss.live '
+                                        # Create backupuser if doesn't exist
+                                        id backupuser || useradd -m -s /bin/bash backupuser
+
+                                        # Create .ssh directory
+                                        mkdir -p /home/backupuser/.ssh
+                                        chmod 700 /home/backupuser/.ssh
+                                        chown backupuser:backupuser /home/backupuser/.ssh
+                                    '
+
+                                    # Copy maybelle's backup public key to hunter
+                                    scp /var/jenkins_home/.ssh/id_ed25519_backup.pub \\
+                                        root@hunter.cryptograss.live:/tmp/maybelle_backup.pub
+
+                                    ssh root@hunter.cryptograss.live '
+                                        # Install the key
+                                        cat /tmp/maybelle_backup.pub >> /home/backupuser/.ssh/authorized_keys
+                                        chmod 600 /home/backupuser/.ssh/authorized_keys
+                                        chown backupuser:backupuser /home/backupuser/.ssh/authorized_keys
+                                        rm /tmp/maybelle_backup.pub
+                                    '
+                                """
+                            }
+                        }
+
                         stage('Deploy to hunter') {
                             steps {
                                 sh """

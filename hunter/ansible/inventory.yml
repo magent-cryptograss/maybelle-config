@@ -9,9 +9,6 @@ all:
     postgres_password: "{{ memory_lane_postgres_password }}"
     postgres_db: magenta_memory
 
-    # Maybelle backup user SSH key (for pulling database backups)
-    maybelle_backup_ssh_key: "{{ maybelle_backup_ssh_key }}"
-
     # Base directory for all instances
     base_dir: /opt/magenta
 
