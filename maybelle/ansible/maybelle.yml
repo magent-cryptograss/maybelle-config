@@ -123,6 +123,14 @@
         type: ed25519
         state: present
 
+    - name: Create .ssh directory for jenkins user
+      file:
+        path: "{{ jenkins_home }}/.ssh"
+        state: directory
+        mode: '0700'
+        owner: 1000
+        group: 1000
+
     - name: Generate backup SSH key for hunter access
       openssh_keypair:
         path: "/var/jenkins_home/.ssh/id_ed25519_backup"
