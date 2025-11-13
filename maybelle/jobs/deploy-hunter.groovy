@@ -45,7 +45,9 @@ pipelineJob('deploy-hunter') {
                                 sh """
                                     ssh root@hunter.cryptograss.live '
                                         cd /root/maybelle-config &&
-                                        git pull origin main &&
+                                        git fetch origin &&
+                                        git checkout production &&
+                                        git pull origin production &&
                                         cd hunter &&
                                         if [ "${params.DB_BACKUP}" != "none" ]; then
                                             ./deploy.sh -e db_dump_file=/tmp/restore_db.dump

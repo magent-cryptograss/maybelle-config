@@ -122,6 +122,31 @@
         type: ed25519
         state: present
 
+    - name: Generate backup SSH key for hunter access
+      openssh_keypair:
+        path: "/var/jenkins_home/.ssh/id_ed25519_backup"
+        type: ed25519
+        owner: 1000
+        group: 1000
+        state: present
+        comment: "maybelle-backup@hunter"
+
+    - name: Read backup public key
+      slurp:
+        src: /var/jenkins_home/.ssh/id_ed25519_backup.pub
+      register: backup_ssh_pubkey
+
+    - name: Display backup public key
+      debug:
+        msg: |
+          ============================================
+          MAYBELLE BACKUP SSH PUBLIC KEY
+          ============================================
+          Add this to hunter vault as 'maybelle_backup_ssh_key':
+
+          {{ backup_ssh_pubkey['content'] | b64decode }}
+          ============================================
+
     - name: Ensure that known_hosts is present
       ansible.builtin.file:
         path: "~/.ssh/known_hosts"
