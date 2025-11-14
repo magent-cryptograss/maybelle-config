@@ -39,10 +39,11 @@
 
 - name: Copy shared CLAUDE.md to user .claude directory
   copy:
-    src: "{{ playbook_dir }}/../../CLAUDE.md"
+    src: "/opt/magenta/magenta-source/CLAUDE.md"
     dest: "{{ base_dir }}/{{ user.name }}/.claude/CLAUDE.md"
     owner: 1000
     group: 1000
+    remote_src: yes
 
 - name: Create user context file
   copy:
