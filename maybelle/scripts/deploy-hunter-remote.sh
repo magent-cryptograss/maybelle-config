@@ -168,12 +168,18 @@ chmod +x "$DEPLOY_SCRIPT"
 
 # Execute deployment with SSH agent forwarding, capture output
 LOGFILE=$(mktemp)
-if ssh -A root@maybelle.cryptograss.live "DB_BACKUP='$DB_BACKUP' BACKUP_FILE='$BACKUP_FILE' bash -s" < "$DEPLOY_SCRIPT" 2>&1 | tee "$LOGFILE"; then
+set -o pipefail  # Make pipeline fail if any command fails, not just the last one
+ssh -A root@maybelle.cryptograss.live "DB_BACKUP='$DB_BACKUP' BACKUP_FILE='$BACKUP_FILE' bash -s" < "$DEPLOY_SCRIPT" 2>&1 | tee "$LOGFILE"
+DEPLOY_EXIT=$?
+
+if [ $DEPLOY_EXIT -eq 0 ]; then
     DEPLOY_STATUS="SUCCESS"
     DEPLOY_RESULT="success"
 else
     DEPLOY_STATUS="FAILURE"
     DEPLOY_RESULT="failure"
+    echo ""
+    echo "ERROR: Deployment failed with exit code $DEPLOY_EXIT"
 fi
 
 # Clean up local temp script
