@@ -174,6 +174,17 @@
       ansible.builtin.shell:
         cmd: "ssh-keyscan -H github.com >> /var/jenkins_home/.ssh/known_hosts"
 
+    - name: Add hunter to jenkins user known_hosts
+      ansible.builtin.shell:
+        cmd: "ssh-keyscan -H hunter.cryptograss.live >> /var/jenkins_home/.ssh/known_hosts"
+
+    - name: Fix ownership of jenkins known_hosts
+      file:
+        path: /var/jenkins_home/.ssh/known_hosts
+        owner: 1000
+        group: 1000
+        mode: '0644'
+
     - name: Cronjob to rsync production builds to web servers
       ansible.builtin.cron:
         name: "push sites to prod"
