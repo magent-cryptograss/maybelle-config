@@ -1,9 +1,9 @@
 # Jenkins (automatic TLS with Let's Encrypt)
 {{ domain_name }} {
     reverse_proxy localhost:{{ jenkins_port }} {
-        # Required for Jenkins websockets
-        header_up Upgrade {http.request.header.Upgrade}
-        header_up Connection {http.request.header.Connection}
+        # Tell Jenkins about the original protocol and host
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {{ domain_name }}
     }
 }
 

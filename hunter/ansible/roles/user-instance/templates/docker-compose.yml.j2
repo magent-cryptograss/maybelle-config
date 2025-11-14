@@ -4,6 +4,7 @@ services:
   {{ user.name }}-arthel:
     image: magenta-arthel:latest  # Uses pre-built image, no build step
     container_name: {{ user.name }}-arthel
+    hostname: {{ user.name }}@hunter
     ports:
       - "{{ user.ssh_port }}:22"
       # code-server web IDE (18080 for justin, 18081 for rj, etc.)

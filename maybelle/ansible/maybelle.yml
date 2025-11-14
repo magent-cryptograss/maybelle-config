@@ -3,7 +3,7 @@
   hosts: all
 
   vars_files:
-    - ../../secrets/vault-plaintext.yml
+    - ../../secrets/vault.yml
 
   vars:
     jenkins_port: 8080
@@ -13,6 +13,7 @@
     domain_name: "maybelle.cryptograss.live"
     github_repo_url: "https://github.com/cryptograss/justinholmes.com" # TODO: make this dynamic?  Certainly it will change with the repo rename.
     jenkins_home: "/var/jenkins_home"
+    caddy_config_type: "maybelle"  # Use maybelle-specific Caddyfile template
 
   tasks:
     - name: Install required packages
@@ -105,7 +106,7 @@
           CASC_JENKINS_CONFIG: "/var/jenkins_home/casc_configs/jenkins.yml"
           JENKINS_ADMIN_ID: admin
           JENKINS_ADMIN_PASSWORD: "{{ jenkins_admin_password }}"
-          GITHUB_TOKEN: "{{ github_token }}"
+          GITHUB_TOKEN: "{{ maybelle_github_token }}"
           GITHUB_REPO_URL: "{{ github_repo_url }}"
         ports:
           - "8080:8080"
@@ -121,6 +122,35 @@
         path: "~/.ssh/id_ed25519"
         type: ed25519
         state: present
+
+    - name: Create .ssh directory for jenkins user
+      file:
+        path: "{{ jenkins_home }}/.ssh"
+        state: directory
+        mode: '0700'
+        owner: 1000
+        group: 1000
+
+    - name: Generate backup SSH key for hunter access
+      openssh_keypair:
+        path: "/var/jenkins_home/.ssh/id_ed25519_backup"
+        type: ed25519
+        owner: 1000
+        group: 1000
+        state: present
+        comment: "maybelle-backup@hunter"
+
+    - name: Deploy hunter root SSH key from vault
+      copy:
+        content: "{{ hunter_root_ssh_key | b64decode }}"
+        dest: "/root/.ssh/id_ed25519_hunter"
+        mode: '0600'
+        owner: root
+        group: root
+
+    - name: Add hunter to known_hosts
+      ansible.builtin.shell:
+        cmd: "ssh-keyscan -H hunter.cryptograss.live >> /root/.ssh/known_hosts"
 
     - name: Ensure that known_hosts is present
       ansible.builtin.file:

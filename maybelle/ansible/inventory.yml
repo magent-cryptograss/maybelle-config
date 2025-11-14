@@ -1,0 +1,5 @@
+all:
+  hosts:
+    maybelle:
+      ansible_host: maybelle.cryptograss.live
+      ansible_user: root
