@@ -95,17 +95,12 @@ def cleanup_ssh_agent():
     subprocess.run(['ssh-agent', '-k'], capture_output=True)
 
 
-def deploy_hunter(backup_file):
+def deploy_hunter(backup_file, vault_password):
     """Run ansible deployment on hunter FROM maybelle"""
     print("\n" + "=" * 60)
     print("DEPLOYING HUNTER")
     print("=" * 60)
     print()
-
-    # Check for vault password
-    vault_password = os.environ.get('ANSIBLE_VAULT_PASSWORD')
-    if not vault_password:
-        raise Exception("ANSIBLE_VAULT_PASSWORD environment variable not set")
 
     # First, ensure maybelle-config repo is on maybelle and up to date
     print("Updating maybelle-config repository on maybelle...")
@@ -153,10 +148,40 @@ def deploy_hunter(backup_file):
     print("✓ Deployment complete")
 
 
+def get_vault_password():
+    """Get vault password from environment or file"""
+    # Try direct password first
+    password = os.environ.get('ANSIBLE_VAULT_PASSWORD')
+    if password:
+        return password
+
+    # Try password file
+    password_file = os.environ.get('ANSIBLE_VAULT_PASSWORD_FILE')
+    if password_file:
+        try:
+            with open(password_file, 'r') as f:
+                return f.read().strip()
+        except FileNotFoundError:
+            raise Exception(f"Vault password file not found: {password_file}")
+
+    raise Exception("Neither ANSIBLE_VAULT_PASSWORD nor ANSIBLE_VAULT_PASSWORD_FILE is set")
+
+
 def main():
     print("=" * 60)
     print("DEPLOY HUNTER VIA MAYBELLE")
     print("=" * 60)
+
+    # Check for vault password early
+    try:
+        vault_password = get_vault_password()
+        print("✓ Vault password found")
+    except Exception as e:
+        print(f"\n✗ ERROR: {e}")
+        print("\nSet one of:")
+        print("  export ANSIBLE_VAULT_PASSWORD='your-password'")
+        print("  export ANSIBLE_VAULT_PASSWORD_FILE='/path/to/password/file'")
+        sys.exit(1)
 
     # Select backup
     backup_file = select_backup()
@@ -180,7 +205,7 @@ def main():
 
     try:
         # Deploy
-        deploy_hunter(backup_file)
+        deploy_hunter(backup_file, vault_password)
         print("\n✓ SUCCESS")
 
     except Exception as e:
