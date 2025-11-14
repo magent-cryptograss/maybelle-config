@@ -125,19 +125,32 @@ def deploy_hunter(backup_file, vault_password):
     print("✓ Repository updated\n")
 
     # Build ansible command - run from maybelle, targeting hunter
-    # Pass vault password via environment variable
-    if backup_file:
-        print(f"Using database backup: {backup_file}\n")
-        ansible_cmd = f"ANSIBLE_VAULT_PASSWORD='{vault_password}' cd /root/maybelle-config && echo $ANSIBLE_VAULT_PASSWORD | ansible-playbook --vault-password-file=/dev/stdin -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml -e db_backup_file=/var/jenkins_home/hunter-db-backups/{backup_file}"
-    else:
-        print("Skipping database restoration\n")
-        ansible_cmd = f"ANSIBLE_VAULT_PASSWORD='{vault_password}' cd /root/maybelle-config && echo $ANSIBLE_VAULT_PASSWORD | ansible-playbook --vault-password-file=/dev/stdin -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml"
+    # Create temp vault password file on maybelle
+    print("Creating temporary vault password file on maybelle...")
+    import tempfile as tmp
+    vault_file_path = '/tmp/vault_pass_' + str(os.getpid())
 
-    # Run ansible FROM maybelle (ansible SSHs to hunter using our forwarded agent)
-    result = subprocess.run(
-        ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live', ansible_cmd],
-        check=False
-    )
+    # Write password to temp file on maybelle
+    write_vault = f"echo '{vault_password}' > {vault_file_path} && chmod 600 {vault_file_path}"
+    run_ssh('root@maybelle.cryptograss.live', write_vault, forward_agent=True)
+
+    try:
+        # Build ansible command using the temp vault file
+        if backup_file:
+            print(f"Using database backup: {backup_file}\n")
+            ansible_cmd = f"cd /root/maybelle-config && ansible-playbook --vault-password-file={vault_file_path} -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml -e db_backup_file=/var/jenkins_home/hunter-db-backups/{backup_file}"
+        else:
+            print("Skipping database restoration\n")
+            ansible_cmd = f"cd /root/maybelle-config && ansible-playbook --vault-password-file={vault_file_path} -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml"
+
+        # Run ansible FROM maybelle (ansible SSHs to hunter using our forwarded agent)
+        result = subprocess.run(
+            ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live', ansible_cmd],
+            check=False
+        )
+    finally:
+        # Clean up vault password file
+        run_ssh('root@maybelle.cryptograss.live', f'rm -f {vault_file_path}', forward_agent=True, check=False)
 
     print()
     print("=" * 60)
