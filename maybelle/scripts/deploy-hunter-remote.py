@@ -110,12 +110,13 @@ def deploy_hunter(backup_file, vault_password):
         fi
         cd /root/maybelle-config
         git fetch origin
-        git checkout production
-        git pull origin production
+
+        # Hard reset to production (handles force pushes/rebases)
+        git checkout production || git checkout -b production origin/production
+        git reset --hard origin/production
 
         # Check that production is not behind main
-        git fetch origin main
-        if ! git merge-base --is-ancestor origin/main production; then
+        if ! git merge-base --is-ancestor origin/main origin/production; then
             echo "ERROR: production branch is behind main"
             echo "Please update production to include latest main changes"
             exit 1
