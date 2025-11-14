@@ -77,20 +77,22 @@ echo ""
 DEPLOY_SCRIPT=$(mktemp)
 cat > "$DEPLOY_SCRIPT" << 'DEPLOY_EOF'
 #!/bin/bash
-set -e
+set -ex  # Exit on error AND print each command
 
 # Verify SSH agent forwarding is working
-if [ -z "$SSH_AUTH_SOCK" ]; then
-    echo "ERROR: SSH agent forwarding not available"
-    exit 1
-fi
-
 echo "=== Starting Hunter Deployment ==="
 echo "Backup option: $DB_BACKUP"
 echo "Deployment time: $(date)"
 echo ""
 
+if [ -z "$SSH_AUTH_SOCK" ]; then
+    echo "ERROR: SSH agent forwarding not available"
+    exit 1
+fi
+echo "✓ SSH agent forwarding available (SSH_AUTH_SOCK=$SSH_AUTH_SOCK)"
+
 # Test SSH connectivity to hunter
+echo ""
 echo "Testing connection to hunter..."
 if ssh -o BatchMode=yes -o ConnectTimeout=10 root@hunter.cryptograss.live 'echo "Connection successful"'; then
     echo "✓ SSH connection to hunter verified"
