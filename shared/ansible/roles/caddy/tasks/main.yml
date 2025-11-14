@@ -18,8 +18,8 @@
     mode: '0644'
   notify: Reload Caddy
 
-- name: Enable and start Caddy
+- name: Enable and restart Caddy to load config
   systemd:
     name: caddy
     enabled: yes
-    state: started
+    state: restarted
