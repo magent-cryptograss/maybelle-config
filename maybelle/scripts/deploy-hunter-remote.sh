@@ -92,7 +92,12 @@ echo ""
 
 # Test SSH connectivity to hunter
 echo "Testing connection to hunter..."
-ssh -o BatchMode=yes -o ConnectTimeout=10 root@hunter.cryptograss.live 'echo "Connection successful"'
+if ssh -o BatchMode=yes -o ConnectTimeout=10 root@hunter.cryptograss.live 'echo "Connection successful"'; then
+    echo "✓ SSH connection to hunter verified"
+else
+    echo "✗ Failed to connect to hunter"
+    exit 1
+fi
 
 # Install maybelle backup key on hunter
 echo ""
@@ -145,11 +150,13 @@ ssh root@hunter.cryptograss.live '
 # Execute deployment
 echo ""
 echo "Executing hunter deployment..."
+echo "========================================"
 if [ "$DB_BACKUP" = "none" ]; then
-    ssh root@hunter.cryptograss.live 'cd /root/maybelle-config/hunter && ./deploy.sh --do-not-copy-database'
+    ssh -t root@hunter.cryptograss.live 'cd /root/maybelle-config/hunter && ./deploy.sh --do-not-copy-database'
 else
-    ssh root@hunter.cryptograss.live 'cd /root/maybelle-config/hunter && ./deploy.sh -e db_dump_file=/tmp/restore_db.dump'
+    ssh -t root@hunter.cryptograss.live 'cd /root/maybelle-config/hunter && ./deploy.sh -e db_dump_file=/tmp/restore_db.dump'
 fi
+echo "========================================"
 
 echo ""
 echo "=== Deployment Complete ==="
