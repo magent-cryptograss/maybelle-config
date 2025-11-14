@@ -64,27 +64,41 @@ if [ ! -f ~/.ssh/id_ed25519_hunter ]; then
     exit 1
 fi
 
-# Get Jenkins admin password
-JENKINS_PASSWORD=$(cat /var/jenkins_home/.jenkins_admin_password 2>/dev/null || echo "admin")
+# Get Jenkins admin password from secrets directory
+JENKINS_PASSWORD=$(cat /var/jenkins_home/secrets/initialAdminPassword 2>/dev/null)
+if [ -z "$JENKINS_PASSWORD" ]; then
+    echo "Error: Could not read Jenkins admin password"
+    exit 1
+fi
 
 # Trigger Jenkins job
 echo ""
 echo "Triggering Jenkins deploy-hunter job..."
 
 if [ "$DB_BACKUP" = "select" ]; then
-    curl -X POST "http://localhost:8080/job/deploy-hunter/buildWithParameters" \
+    HTTP_CODE=$(curl -X POST "http://localhost:8080/job/deploy-hunter/buildWithParameters" \
         --user "admin:$JENKINS_PASSWORD" \
         --data-urlencode "DB_BACKUP=select" \
-        --data-urlencode "BACKUP_FILE=$BACKUP_FILE"
+        --data-urlencode "BACKUP_FILE=$BACKUP_FILE" \
+        -w "%{http_code}" \
+        -o /tmp/jenkins_response.txt)
 else
-    curl -X POST "http://localhost:8080/job/deploy-hunter/buildWithParameters" \
+    HTTP_CODE=$(curl -X POST "http://localhost:8080/job/deploy-hunter/buildWithParameters" \
         --user "admin:$JENKINS_PASSWORD" \
-        --data-urlencode "DB_BACKUP=$DB_BACKUP"
+        --data-urlencode "DB_BACKUP=$DB_BACKUP" \
+        -w "%{http_code}" \
+        -o /tmp/jenkins_response.txt)
 fi
 
 echo ""
-echo "Deployment job triggered!"
-echo "View progress at: https://maybelle.cryptograss.live/job/deploy-hunter/"
+if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+    echo "Deployment job triggered successfully!"
+    echo "View progress at: https://maybelle.cryptograss.live/job/deploy-hunter/"
+else
+    echo "Error: Failed to trigger Jenkins job (HTTP $HTTP_CODE)"
+    cat /tmp/jenkins_response.txt
+    exit 1
+fi
 EOF
 
 echo ""
