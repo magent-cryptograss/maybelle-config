@@ -96,33 +96,23 @@ def cleanup_ssh_agent():
 
 
 def deploy_hunter(backup_file):
-    """Run ansible deployment on hunter"""
+    """Run ansible deployment on hunter FROM maybelle"""
     print("\n" + "=" * 60)
     print("DEPLOYING HUNTER")
     print("=" * 60)
     print()
 
-    # Build ansible command
-    ansible_cmd = "cd /root/maybelle-config/hunter/ansible && ansible-playbook -i inventory.yml hunter.yml"
-
+    # Build ansible command - run from maybelle, targeting hunter
     if backup_file:
-        # Copy backup to hunter first
-        print(f"Copying database backup to hunter: {backup_file}")
-        run_ssh(
-            'root@maybelle.cryptograss.live',
-            f'scp /var/jenkins_home/hunter-db-backups/{backup_file} root@hunter.cryptograss.live:/tmp/restore_db.dump',
-            forward_agent=True
-        )
-        print("✓ Backup copied\n")
-        ansible_cmd += " -e db_dump_file=/tmp/restore_db.dump"
+        print(f"Using database backup: {backup_file}\n")
+        ansible_cmd = f"ansible-playbook -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml -e db_backup_file=/var/jenkins_home/hunter-db-backups/{backup_file}"
     else:
         print("Skipping database restoration\n")
-        ansible_cmd += " -e skip_database_restore=true"
+        ansible_cmd = "ansible-playbook -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml"
 
-    # Run ansible via maybelle -> hunter with agent forwarding
+    # Run ansible FROM maybelle (ansible SSHs to hunter using our forwarded agent)
     result = subprocess.run(
-        ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live',
-         f'ssh -t root@hunter.cryptograss.live "{ansible_cmd}"'],
+        ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live', ansible_cmd],
         check=False
     )
 
