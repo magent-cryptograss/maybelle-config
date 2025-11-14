@@ -102,13 +102,35 @@ def deploy_hunter(backup_file):
     print("=" * 60)
     print()
 
+    # First, ensure maybelle-config repo is on maybelle and up to date
+    print("Updating maybelle-config repository on maybelle...")
+    repo_setup = '''
+        if [ ! -d /root/maybelle-config ]; then
+            git clone https://github.com/cryptograss/maybelle-config.git /root/maybelle-config
+        fi
+        cd /root/maybelle-config
+        git fetch origin
+        git checkout production
+        git pull origin production
+
+        # Check that production is not behind main
+        git fetch origin main
+        if ! git merge-base --is-ancestor origin/main production; then
+            echo "ERROR: production branch is behind main"
+            echo "Please update production to include latest main changes"
+            exit 1
+        fi
+    '''
+    run_ssh('root@maybelle.cryptograss.live', repo_setup, forward_agent=True)
+    print("✓ Repository updated\n")
+
     # Build ansible command - run from maybelle, targeting hunter
     if backup_file:
         print(f"Using database backup: {backup_file}\n")
-        ansible_cmd = f"ansible-playbook -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml -e db_backup_file=/var/jenkins_home/hunter-db-backups/{backup_file}"
+        ansible_cmd = f"cd /root/maybelle-config && ansible-playbook -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml -e db_backup_file=/var/jenkins_home/hunter-db-backups/{backup_file}"
     else:
         print("Skipping database restoration\n")
-        ansible_cmd = "ansible-playbook -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml"
+        ansible_cmd = "cd /root/maybelle-config && ansible-playbook -i hunter/ansible/inventory.yml hunter/ansible/playbook.yml"
 
     # Run ansible FROM maybelle (ansible SSHs to hunter using our forwarded agent)
     result = subprocess.run(
