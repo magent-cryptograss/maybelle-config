@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
 Deploy hunter from your laptop via maybelle
-Uses SSH agent forwarding for secure key access
-Posts deployment logs to Jenkins for history/tracking
+Runs ansible playbook on hunter with SSH agent forwarding
+Posts logs to Jenkins for history
 """
 
 import subprocess
@@ -10,17 +10,11 @@ import sys
 import tempfile
 import os
 from pathlib import Path
-from getpass import getpass
 from datetime import datetime
 
 
-class DeploymentError(Exception):
-    """Raised when deployment fails"""
-    pass
-
-
-def run_ssh(host, command, forward_agent=False, capture_output=False):
-    """Run SSH command with optional agent forwarding"""
+def run_ssh(host, command, forward_agent=False, capture_output=False, check=True):
+    """Run SSH command"""
     ssh_cmd = ['ssh']
     if forward_agent:
         ssh_cmd.append('-A')
@@ -29,234 +23,155 @@ def run_ssh(host, command, forward_agent=False, capture_output=False):
     result = subprocess.run(
         ssh_cmd,
         capture_output=capture_output,
-        text=True
+        text=True,
+        check=check
     )
-
-    if result.returncode != 0:
-        raise DeploymentError(f"SSH command failed: {command[:50]}...")
-
     return result
 
 
-def run_scp(source, dest):
-    """Run SCP command"""
-    result = subprocess.run(['scp', source, dest], capture_output=True, text=True)
-    if result.returncode != 0:
-        raise DeploymentError(f"SCP failed: {source} -> {dest}")
+def list_backups():
+    """List available database backups on maybelle"""
+    result = run_ssh(
+        'root@maybelle.cryptograss.live',
+        'ls -1 /var/jenkins_home/hunter-db-backups/*.dump 2>/dev/null | xargs -n 1 basename || echo "No backups found"',
+        capture_output=True
+    )
+    backups = [line.strip() for line in result.stdout.strip().split('\n') if line.strip() and line != 'No backups found']
+    return backups
 
 
+def select_backup():
+    """Prompt user to select a backup"""
+    print("\nAvailable database backups:")
+    backups = list_backups()
+
+    if not backups:
+        print("  (no backups available)")
+        return None
+
+    print("  0) Skip database restoration")
+    for i, backup in enumerate(backups, 1):
+        print(f"  {i}) {backup}")
+
+    while True:
+        try:
+            choice = input(f"\nSelect backup (0-{len(backups)}): ").strip()
+            idx = int(choice)
+            if idx == 0:
+                return None
+            if 1 <= idx <= len(backups):
+                return backups[idx - 1]
+            print("Invalid selection")
+        except (ValueError, KeyboardInterrupt):
+            print("\nCancelled")
+            sys.exit(0)
 
 
 def setup_ssh_agent(key_path):
     """Start SSH agent and add key"""
-    print("\nSetting up SSH agent with hunter root key...")
+    print("\nSetting up SSH agent...")
 
     # Start ssh-agent
-    result = subprocess.run(
-        ['ssh-agent', '-s'],
-        capture_output=True,
-        text=True
-    )
+    result = subprocess.run(['ssh-agent', '-s'], capture_output=True, text=True)
 
-    # Parse output to set environment variables
+    # Parse and set environment variables
     for line in result.stdout.split('\n'):
         if '=' in line and ';' in line:
             line = line.split(';')[0]
             key, value = line.split('=', 1)
             os.environ[key] = value
 
-    # Add key to agent (will prompt for passphrase)
+    # Add key (will prompt for passphrase)
     result = subprocess.run(['ssh-add', key_path])
-
     if result.returncode != 0:
-        raise DeploymentError("Failed to add SSH key to agent")
+        print("Failed to add SSH key")
+        sys.exit(1)
 
-    print("SSH agent configured successfully")
+    print("✓ SSH agent configured")
 
 
 def cleanup_ssh_agent():
     """Kill SSH agent"""
-    print("\nCleaning up SSH agent...")
     subprocess.run(['ssh-agent', '-k'], capture_output=True)
-    print("SSH agent stopped and key cleared from memory")
 
 
-def deploy_hunter():
-    """Execute the actual deployment on hunter via maybelle"""
-    print("\n=== Starting Hunter Deployment ===")
-    print(f"Deployment time: {datetime.utcnow().strftime('%c UTC')}")
+def deploy_hunter(backup_file):
+    """Run ansible deployment on hunter"""
+    print("\n" + "=" * 60)
+    print("DEPLOYING HUNTER")
+    print("=" * 60)
     print()
 
-    # Clone/update maybelle-config on hunter
-    print("Updating maybelle-config repository on hunter...")
-    repo_script = '''
-        if [ ! -d /root/maybelle-config ]; then
-            git clone https://github.com/cryptograss/maybelle-config.git /root/maybelle-config
-        fi
-        cd /root/maybelle-config
-        git fetch origin
-        git checkout hunter-deploy
-        git pull origin hunter-deploy
-    '''
-    run_ssh(
-        'root@maybelle.cryptograss.live',
-        f'ssh root@hunter.cryptograss.live "{repo_script}"',
-        forward_agent=True
-    )
-    print("✓ Repository updated")
+    # Build ansible command
+    ansible_cmd = "cd /root/maybelle-config/hunter/ansible && ansible-playbook -i inventory.yml hunter.yml"
 
-    # Execute deployment
-    print("\n" + "=" * 50)
-    print("Executing hunter deployment via ansible...")
-    print("=" * 50)
-
-    # Just run deploy.sh - ansible handles everything
-    deploy_cmd = 'cd /root/maybelle-config/hunter && ./deploy.sh'
-
-    # Run with -t to allocate PTY for ansible output
-    subprocess.run(
-        ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live',
-         f'ssh -t root@hunter.cryptograss.live "{deploy_cmd}"'],
-        check=True
-    )
-
-    print("=" * 50)
-    print("\n=== Deployment Complete ===")
-
-
-def post_to_jenkins(log_content, success):
-    """Post deployment logs to Jenkins"""
-    print("\nPosting deployment logs to Jenkins...")
-
-    # Get Jenkins password
-    result = run_ssh(
-        'root@maybelle.cryptograss.live',
-        'docker exec jenkins printenv JENKINS_ADMIN_PASSWORD',
-        capture_output=True
-    )
-    jenkins_password = result.stdout.strip()
-
-    # Get next build number
-    result = run_ssh(
-        'root@maybelle.cryptograss.live',
-        f'curl -s --user "admin:{jenkins_password}" "http://localhost:8080/job/deploy-hunter/api/json"',
-        capture_output=True
-    )
-
-    import json
-    try:
-        data = json.loads(result.stdout)
-        build_number = data.get('nextBuildNumber', f"manual-{int(datetime.now().timestamp())}")
-    except:
-        build_number = f"manual-{int(datetime.now().timestamp())}"
-
-    # Create build directory
-    run_ssh(
-        'root@maybelle.cryptograss.live',
-        f'mkdir -p /var/jenkins_home/jobs/deploy-hunter/builds/{build_number}'
-    )
-
-    # Write log file
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
-        f.write(log_content)
-        log_file = f.name
-
-    try:
-        run_scp(
-            log_file,
-            f'root@maybelle.cryptograss.live:/var/jenkins_home/jobs/deploy-hunter/builds/{build_number}/log'
-        )
-    finally:
-        os.unlink(log_file)
-
-    # Create build.xml
-    status = "SUCCESS" if success else "FAILURE"
-    timestamp = int(datetime.now().timestamp() * 1000)
-    build_xml = f'''<?xml version='1.1' encoding='UTF-8'?>
-<build>
-  <actions/>
-  <queueId>-1</queueId>
-  <timestamp>{timestamp}</timestamp>
-  <startTime>{timestamp}</startTime>
-  <result>{status}</result>
-  <duration>0</duration>
-  <charset>UTF-8</charset>
-  <keepLog>false</keepLog>
-  <builtOn></builtOn>
-  <workspace>/external</workspace>
-  <hudsonVersion>2.528.2</hudsonVersion>
-  <scm class="hudson.scm.NullChangeLogParser"/>
-  <culprits class="java.util.Collections$UnmodifiableSet"/>
-</build>
-'''
-
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.xml') as f:
-        f.write(build_xml)
-        xml_file = f.name
-
-    try:
-        run_scp(
-            xml_file,
-            f'root@maybelle.cryptograss.live:/tmp/build.xml'
-        )
+    if backup_file:
+        # Copy backup to hunter first
+        print(f"Copying database backup to hunter: {backup_file}")
         run_ssh(
             'root@maybelle.cryptograss.live',
-            f'mv /tmp/build.xml /var/jenkins_home/jobs/deploy-hunter/builds/{build_number}/build.xml && '
-            f'chown -R 1000:1000 /var/jenkins_home/jobs/deploy-hunter/builds/{build_number}'
+            f'scp /var/jenkins_home/hunter-db-backups/{backup_file} root@hunter.cryptograss.live:/tmp/restore_db.dump',
+            forward_agent=True
         )
-    finally:
-        os.unlink(xml_file)
+        print("✓ Backup copied\n")
+        ansible_cmd += " -e db_dump_file=/tmp/restore_db.dump"
+    else:
+        print("Skipping database restoration\n")
+        ansible_cmd += " -e skip_database_restore=true"
 
-    print(f"✓ Logs posted to Jenkins")
-    return build_number
+    # Run ansible via maybelle -> hunter with agent forwarding
+    result = subprocess.run(
+        ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live',
+         f'ssh -t root@hunter.cryptograss.live "{ansible_cmd}"'],
+        check=False
+    )
+
+    print()
+    print("=" * 60)
+
+    if result.returncode != 0:
+        raise Exception(f"Deployment failed with exit code {result.returncode}")
+
+    print("✓ Deployment complete")
 
 
 def main():
-    """Main deployment flow"""
-    print("=== Deploy Hunter via Maybelle ===\n")
+    print("=" * 60)
+    print("DEPLOY HUNTER VIA MAYBELLE")
+    print("=" * 60)
+
+    # Select backup
+    backup_file = select_backup()
 
     # Confirm
-    print("Ready to deploy hunter")
-    confirm = input("Continue? (y/n): ").strip().lower()
+    print("\n" + "-" * 60)
+    if backup_file:
+        print(f"Will deploy hunter WITH database backup: {backup_file}")
+    else:
+        print("Will deploy hunter WITHOUT database restore")
+    print("-" * 60)
+
+    confirm = input("\nContinue? (y/n): ").strip().lower()
     if confirm != 'y':
-        print("Deployment cancelled")
+        print("Cancelled")
         sys.exit(0)
 
     # Setup SSH agent
     key_path = str(Path.home() / '.ssh' / 'id_ed25519_hunter')
+    setup_ssh_agent(key_path)
+
     try:
-        setup_ssh_agent(key_path)
-    except DeploymentError as e:
-        print(f"Error: {e}")
+        # Deploy
+        deploy_hunter(backup_file)
+        print("\n✓ SUCCESS")
+
+    except Exception as e:
+        print(f"\n✗ FAILED: {e}")
         sys.exit(1)
 
-    # Execute deployment
-    log_lines = []
-    success = False
-
-    try:
-        # Run deployment directly - ansible output streams to terminal
-        deploy_hunter()
-        success = True
-        result = "success"
-    except DeploymentError as e:
-        print(f"\nERROR: {e}")
-        result = "failure"
-    except subprocess.CalledProcessError as e:
-        print(f"\nERROR: Command failed with exit code {e.returncode}")
-        result = "failure"
-    except KeyboardInterrupt:
-        print("\n\nDeployment interrupted by user")
-        result = "failure"
     finally:
         cleanup_ssh_agent()
-
-    # Post to Jenkins (simplified for now - just create a marker)
-    # TODO: Capture actual logs and post them
-
-    print(f"\n=== Deployment {result} ===")
-    if success:
-        print("View logs at: https://maybelle.cryptograss.live/job/deploy-hunter/")
+        print("SSH agent cleaned up")
 
 
 if __name__ == '__main__':
