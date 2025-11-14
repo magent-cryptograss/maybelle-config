@@ -140,6 +140,18 @@
         state: present
         comment: "maybelle-backup@hunter"
 
+    - name: Deploy hunter root SSH key from vault
+      copy:
+        content: "{{ hunter_root_ssh_key | b64decode }}"
+        dest: "/root/.ssh/id_ed25519_hunter"
+        mode: '0600'
+        owner: root
+        group: root
+
+    - name: Add hunter to known_hosts
+      ansible.builtin.shell:
+        cmd: "ssh-keyscan -H hunter.cryptograss.live >> /root/.ssh/known_hosts"
+
     - name: Ensure that known_hosts is present
       ansible.builtin.file:
         path: "~/.ssh/known_hosts"
