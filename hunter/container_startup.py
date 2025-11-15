@@ -201,6 +201,33 @@ def configure_mcp_server():
     logger.info("✓ Jenkins MCP server configured: https://maybelle.cryptograss.live/mcp-server/mcp")
 
 
+def configure_claude_settings():
+    """Configure Claude Code settings."""
+    logger.info("=== Configuring Claude Code settings ===")
+
+    settings_dir = Path.home() / '.claude'
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    settings_file = settings_dir / 'settings.json'
+
+    # Read existing settings if they exist
+    if settings_file.exists():
+        import json
+        with open(settings_file, 'r') as f:
+            settings = json.load(f)
+    else:
+        settings = {}
+
+    # Set includeCoAuthoredBy to false
+    settings['includeCoAuthoredBy'] = False
+
+    # Write settings back
+    import json
+    with open(settings_file, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+    logger.info("✓ Claude Code settings configured")
+
+
 def setup_environment_variables():
     """Export container environment variables to shell profile."""
     logger.info("=== Setting up environment variables ===")
@@ -273,6 +300,7 @@ def main():
         setup_environment_variables()
         configure_github_cli()
         configure_mcp_server()
+        configure_claude_settings()
         start_services()
 
         logger.info("=" * 60)
