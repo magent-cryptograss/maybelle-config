@@ -150,6 +150,14 @@
         state: present
         comment: "maybelle-backup@hunter"
 
+    - name: Deploy Jenkins GitHub SSH key from vault
+      copy:
+        content: "{{ jenkins_github_ssh_key | b64decode }}"
+        dest: "/var/jenkins_home/.ssh/id_ed25519"
+        mode: '0600'
+        owner: 1000
+        group: 1000
+
     - name: Deploy hunter root SSH key from vault
       copy:
         content: "{{ hunter_root_ssh_key | b64decode }}"

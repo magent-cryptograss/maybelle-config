@@ -36,7 +36,8 @@ RUN jenkins-plugin-cli --plugins \
     github-branch-source \
     mask-passwords \
     build-name-setter \
-    pipeline-github
+    pipeline-github \
+    mcp-server
 
 # Create directory for Configuration as Code
 RUN mkdir -p /var/jenkins_home/casc_configs
