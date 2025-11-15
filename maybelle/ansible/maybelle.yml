@@ -224,6 +224,25 @@
         owner: 1000
         group: 1000
 
+    - name: Create Jenkins secrets directory
+      file:
+        path: "{{ jenkins_home }}/secrets/0"
+        state: directory
+        mode: '0755'
+        owner: 1000
+        group: 1000
+
+    - name: Deploy justinholmes.com .env file from vault
+      copy:
+        content: |
+          ALCHEMY_API_KEY={{ alchemy_api_key }}
+          INFURA_API_KEY={{ infura_api_key }}
+          DISCORD_BOT_TOKEN={{ discord_bot_token }}
+        dest: "{{ jenkins_home }}/secrets/0/.env"
+        mode: '0600'
+        owner: 1000
+        group: 1000
+
     - name: Create PR builds directory
       file:
         path: "/var/www/builds"
