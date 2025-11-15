@@ -101,6 +101,7 @@
         mode: '0644'
         owner: 1000
         group: 1000
+      notify: Restart Jenkins container
 
     - name: Start Jenkins container
       docker_container:
@@ -231,6 +232,13 @@
     - name: Print SSH trinket
       ansible.builtin.debug:
         msg: "{{ ssh_trinket['content'] | b64decode }}"
+
+  handlers:
+    - name: Restart Jenkins container
+      docker_container:
+        name: jenkins
+        state: started
+        restart: yes
 
   # Handlers are now in roles (caddy role has its own handlers)
 
