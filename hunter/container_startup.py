@@ -192,6 +192,14 @@ def configure_mcp_server():
     )
     logger.info("✓ Playwright MCP server configured (via Docker on magenta-net)")
 
+    # Add Jenkins MCP server (connects to Jenkins on maybelle)
+    run_command(
+        "claude mcp add --scope user --transport sse jenkins https://maybelle.cryptograss.live/mcp/sse",
+        user='magent',
+        check=False
+    )
+    logger.info("✓ Jenkins MCP server configured: https://maybelle.cryptograss.live/mcp/sse")
+
 
 def setup_environment_variables():
     """Export container environment variables to shell profile."""
