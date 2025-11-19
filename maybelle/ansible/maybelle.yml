@@ -16,6 +16,14 @@
     caddy_config_type: "maybelle"  # Use maybelle-specific Caddyfile template
 
   tasks:
+    - name: Update maybelle-config repository
+      git:
+        repo: https://github.com/cryptograss/maybelle-config.git
+        dest: /root/maybelle-config
+        version: production
+        force: yes
+        update: yes
+
     - name: Install required packages
       apt:
         name:
@@ -24,6 +32,7 @@
           - curl
           - software-properties-common
           - docker.io
+          - ansible
         state: present
         update_cache: yes
 
@@ -92,6 +101,7 @@
         mode: '0644'
         owner: 1000
         group: 1000
+      notify: Restart Jenkins container
 
     - name: Start Jenkins container
       docker_container:
@@ -140,6 +150,14 @@
         state: present
         comment: "maybelle-backup@hunter"
 
+    - name: Deploy Jenkins GitHub SSH key from vault
+      copy:
+        content: "{{ jenkins_github_ssh_key | b64decode }}"
+        dest: "/var/jenkins_home/.ssh/id_ed25519"
+        mode: '0600'
+        owner: 1000
+        group: 1000
+
     - name: Deploy hunter root SSH key from vault
       copy:
         content: "{{ hunter_root_ssh_key | b64decode }}"
@@ -174,6 +192,17 @@
       ansible.builtin.shell:
         cmd: "ssh-keyscan -H github.com >> /var/jenkins_home/.ssh/known_hosts"
 
+    - name: Add hunter to jenkins user known_hosts
+      ansible.builtin.shell:
+        cmd: "ssh-keyscan -H hunter.cryptograss.live >> /var/jenkins_home/.ssh/known_hosts"
+
+    - name: Fix ownership of jenkins known_hosts
+      file:
+        path: /var/jenkins_home/.ssh/known_hosts
+        owner: 1000
+        group: 1000
+        mode: '0644'
+
     - name: Cronjob to rsync production builds to web servers
       ansible.builtin.cron:
         name: "push sites to prod"
@@ -194,6 +223,26 @@
         mode: '0644'
         owner: 1000
         group: 1000
+      notify: Restart Jenkins container
+
+    - name: Create Jenkins secrets directory
+      file:
+        path: "{{ jenkins_home }}/secrets/0"
+        state: directory
+        mode: '0755'
+        owner: 1000
+        group: 1000
+
+    - name: Deploy justinholmes.com .env file from vault
+      copy:
+        content: |
+          ALCHEMY_API_KEY={{ ALCHEMY_API_KEY }}
+          INFURA_API_KEY={{ INFURA_API_KEY }}
+          DISCORD_BOT_TOKEN={{ DISCORD_BOT_TOKEN }}
+        dest: "{{ jenkins_home }}/secrets/0/.env"
+        mode: '0600'
+        owner: 1000
+        group: 1000
 
     - name: Create PR builds directory
       file:
@@ -211,6 +260,13 @@
     - name: Print SSH trinket
       ansible.builtin.debug:
         msg: "{{ ssh_trinket['content'] | b64decode }}"
+
+  handlers:
+    - name: Restart Jenkins container
+      docker_container:
+        name: jenkins
+        state: started
+        restart: yes
 
   # Handlers are now in roles (caddy role has its own handlers)
 

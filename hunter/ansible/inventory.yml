@@ -35,11 +35,11 @@ all:
         port_range_start: 14010
         code_server_password: "{{ rj_vscode_password }}"
 
-      # - name: skyler
-      #   full_name: "Skyler Golden"
-      #   email: "skyler@example.com"
-      #   github_username: "AudioSkyWalker"
-      #   ssh_pubkey: "skyler_ssh_key_here"
-      #   ssh_port: 2224
-      #   port_range_start: 14020
-      #   code_server_password: "{{ skyler_vscode_password | default('change-me-skyler') }}"
+      - name: skyler
+        full_name: "Skyler Golden"
+        email: "skygoldenmusic1@gmail.com"
+        github_username: "AudioSkyWalker"
+        ssh_pubkey: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDJqDJ+beUtVNZhW9qm61bXkZaL9J2Z700iaYnCSlbi6RH35lzrgFqHl1jFUZ6548dDdQcfIIwKx8bIR6iA23aBNwsX0Z9wEg+FLz+b4W1R+8Y602dy6e1rNOVtXozntKJSBFkfvsId6HpLtv7Cl/zRj+8GnZ+b3WUzur2ZrXklb00BGDAza8KkMhdzi2pyJudQAnQOIhV5ZzAREfcGr9I1+hfQdwHI/2u3W4anA0T18+A/uLWkon5NxW8gGk/xfAQ+UaPfOu020B42dVOD6E6WMVByM2MlZg/q/kuj14jwoRtRV7NGqQ8+6Vd5OprSyJ2Cj9RJ1tM0GCBZSYygj9H2YIRXkNE11U/9jRk9rlcW8HMpsx9C/+EGpwJXM8z5x+so9gm4Pb7zaussCUsAPlvFucRW539PO97ttOtHk9xstVOui40buwFzvkUZ1y5x83mbv8cmWjQS0cVcEuT2NqPWAPuspCHh8QAx3cLvByMDcRQgJjELqjboYmvtgDgvg5M= skylergoldenmusic@Skylers-MBP.home"
+        ssh_port: 2224
+        port_range_start: 14020
+        code_server_password: "{{ skyler_vscode_password | default('change-me-skyler') }}"

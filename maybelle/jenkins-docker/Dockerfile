@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     rsync \
     sudo \
     curl \
+    jq \
     docker.io \
     && rm -rf /var/lib/apt/lists/*
 
@@ -36,7 +37,8 @@ RUN jenkins-plugin-cli --plugins \
     github-branch-source \
     mask-passwords \
     build-name-setter \
-    pipeline-github
+    pipeline-github \
+    mcp-server
 
 # Create directory for Configuration as Code
 RUN mkdir -p /var/jenkins_home/casc_configs

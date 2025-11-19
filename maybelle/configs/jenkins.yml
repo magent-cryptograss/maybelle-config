@@ -24,10 +24,23 @@ jenkins:
           - "Job/Read"
           - "Overall/Read"
 
+  globalNodeProperties:
+    - envVars:
+        env:
+          - key: "NVM_DIR"
+            value: "/var/jenkins_home/.nvm"
+          - key: "NODE_VERSION"
+            value: "23.6.1"
+          - key: "SECRETS_DIR"
+            value: "/var/jenkins_home/secrets"
+
 jobs:
   - file: /var/jenkins_home/jobs/production.groovy
   - file: /var/jenkins_home/jobs/pull-requests.groovy
   - file: /var/jenkins_home/jobs/fetch-chain-data.groovy
+  - file: /var/jenkins_home/jobs/deploy-hunter.groovy
+  - file: /var/jenkins_home/jobs/backup-hunter-db.groovy
+  - file: /var/jenkins_home/jobs/backup-hunter-db-manual.groovy
 
 credentials:
   system:

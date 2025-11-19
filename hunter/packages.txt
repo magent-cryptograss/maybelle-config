@@ -38,3 +38,4 @@ iproute2
 tmux
 screen
 mosh
+imagemagick
