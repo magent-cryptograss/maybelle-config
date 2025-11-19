@@ -166,6 +166,14 @@
         owner: root
         group: root
 
+    - name: Deploy NFS SSH key from vault for production deployment
+      copy:
+        content: "{{ jenkins_nfs_ssh_key | b64decode }}"
+        dest: "/var/jenkins_home/.ssh/id_ed25519_nfs"
+        mode: '0600'
+        owner: 1000
+        group: 1000
+
     - name: Add hunter to known_hosts
       ansible.builtin.shell:
         cmd: "ssh-keyscan -H hunter.cryptograss.live >> /root/.ssh/known_hosts"
