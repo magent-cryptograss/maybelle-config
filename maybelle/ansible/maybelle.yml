@@ -127,12 +127,6 @@
       include_role:
         name: caddy
 
-    - name: Generate SSH key for root
-      openssh_keypair:
-        path: "~/.ssh/id_ed25519"
-        type: ed25519
-        state: present
-
     - name: Create .ssh directory for jenkins user
       file:
         path: "{{ jenkins_home }}/.ssh"
@@ -165,6 +159,14 @@
         mode: '0600'
         owner: root
         group: root
+
+    - name: Deploy NFS SSH key from vault for production deployment
+      copy:
+        content: "{{ jenkins_nfs_ssh_key | b64decode }}"
+        dest: "/var/jenkins_home/.ssh/id_ed25519_nfs"
+        mode: '0600'
+        owner: 1000
+        group: 1000
 
     - name: Add hunter to known_hosts
       ansible.builtin.shell:
@@ -202,11 +204,6 @@
         owner: 1000
         group: 1000
         mode: '0644'
-
-    - name: Cronjob to rsync production builds to web servers
-      ansible.builtin.cron:
-        name: "push sites to prod"
-        job: "rsync -vah --progress --delete /var/jenkins_home/www/builds/production/* jmyles_justinholmescom@ssh.nyc1.nearlyfreespeech.net: >> ~/sites-rsync.log 2>&1"
 
     - name: Create Jenkins job definitions directory
       file:
@@ -251,15 +248,6 @@
         mode: '0755'
         owner: www-data
         group: www-data
-
-    - name: Slurp public SSH key  # TODO: This is only useful as the jenkins user, which doesn't have a key yet.  Better to custody the private key and copy it.  #230
-      ansible.builtin.slurp:
-        src: ~/.ssh/id_ed25519.pub
-      register: ssh_trinket
-
-    - name: Print SSH trinket
-      ansible.builtin.debug:
-        msg: "{{ ssh_trinket['content'] | b64decode }}"
 
   handlers:
     - name: Restart Jenkins container
