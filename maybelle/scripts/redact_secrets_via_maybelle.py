@@ -135,8 +135,7 @@ def main():
             pip3 install -q psycopg2-binary pyyaml 2>/dev/null || true
 
             # Get DB password from vault
-            export ANSIBLE_VAULT_PASSWORD=$(cat {vault_file_path})
-            export MAGENTA_DB_PASSWORD=$(ansible-vault view /root/maybelle-config/group_vars/all/vault.yml 2>/dev/null | grep memory_lane_postgres_password | awk '{{print $2}}')
+            export MAGENTA_DB_PASSWORD=$(ansible-vault view --vault-password-file={vault_file_path} /root/maybelle-config/secrets/vault.yml 2>/dev/null | grep memory_lane_postgres_password | awk '{{print $2}}')
 
             if [ -z "$MAGENTA_DB_PASSWORD" ]; then
                 echo "ERROR: Could not extract DB password from vault"
