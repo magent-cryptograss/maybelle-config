@@ -1,4 +1,12 @@
 ---
+- name: Clone or update magenta repository for services
+  git:
+    repo: https://github.com/magent-cryptograss/magenta.git
+    dest: "{{ base_dir }}/magenta-source"
+    version: production
+    force: yes
+    update: yes
+
 - name: Create .env file with secrets for services
   copy:
     dest: "{{ base_dir }}/magenta-source/.env"
