@@ -131,9 +131,6 @@ def main():
         redact_cmd = f'''
             cd /root/maybelle-config
 
-            # Install dependencies if needed
-            pip3 install psycopg2-binary pyyaml
-
             # Get DB password from vault
             export MAGENTA_DB_PASSWORD=$(ansible-vault view --vault-password-file={vault_file_path} /root/maybelle-config/secrets/vault.yml 2>/dev/null | grep memory_lane_postgres_password | awk '{{print $2}}')
 
@@ -142,8 +139,8 @@ def main():
                 exit 1
             fi
 
-            # Run the redaction script
-            python3 maybelle/scripts/redact_secrets_remote.py {args_str}
+            # Run the redaction script using ops venv
+            /opt/magenta-ops/bin/python maybelle/scripts/redact_secrets_remote.py {args_str}
         '''
 
         print("\nRunning redaction on maybelle...")

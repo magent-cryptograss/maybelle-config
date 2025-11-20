@@ -33,8 +33,22 @@
           - software-properties-common
           - docker.io
           - ansible
+          - python3-pip
+          - python3-venv
         state: present
         update_cache: yes
+
+    - name: Create ops tools venv
+      command: python3 -m venv /opt/magenta-ops
+      args:
+        creates: /opt/magenta-ops/bin/python
+
+    - name: Install ops dependencies in venv
+      pip:
+        name:
+          - psycopg2-binary
+          - pyyaml
+        virtualenv: /opt/magenta-ops
 
     - name: Create Jenkins home directory
       file:
