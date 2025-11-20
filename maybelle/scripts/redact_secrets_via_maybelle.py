@@ -87,13 +87,13 @@ def main():
         print("  export ANSIBLE_VAULT_PASSWORD_FILE='~/.vault_pass'")
         sys.exit(1)
 
-    # Ensure magenta repo is up to date on maybelle
-    print("\nUpdating magenta repository on maybelle...")
+    # Ensure maybelle-config repo is up to date on maybelle
+    print("\nUpdating maybelle-config repository on maybelle...")
     repo_setup = '''
-        if [ ! -d /root/magenta ]; then
-            git clone https://github.com/magent-cryptograss/magenta.git /root/magenta
+        if [ ! -d /root/maybelle-config ]; then
+            git clone https://github.com/cryptograss/maybelle-config.git /root/maybelle-config
         fi
-        cd /root/magenta
+        cd /root/maybelle-config
         git fetch origin
         git checkout main
         git reset --hard origin/main
@@ -129,7 +129,7 @@ def main():
         # Run redaction script on maybelle
         # First, get the DB password from vault
         redact_cmd = f'''
-            cd /root/magenta
+            cd /root/maybelle-config
 
             # Install dependencies if needed
             pip3 install -q psycopg2-binary pyyaml 2>/dev/null || true
@@ -143,7 +143,7 @@ def main():
             fi
 
             # Run the redaction script
-            python3 scripts/redact_secrets_remote.py {args_str}
+            python3 maybelle/scripts/redact_secrets_remote.py {args_str}
         '''
 
         print("\nRunning redaction on maybelle...")
