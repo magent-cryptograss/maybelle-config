@@ -156,11 +156,50 @@ def deploy_hunter(backup_file, vault_password, no_cache=False):
 
         ansible_cmd = f"cd /root/maybelle-config/hunter/ansible && ansible-playbook --vault-password-file={vault_file_path} -i inventory.yml playbook.yml{extra_vars_str}"
 
-        # Run ansible FROM maybelle (ansible SSHs to hunter using our forwarded agent)
+        # Run ansible in tmux session on maybelle so it survives connection drops
+        session_name = f"hunter-deploy-{os.getpid()}"
+        log_file = f"/tmp/hunter-deploy-{os.getpid()}.log"
+
+        # Create tmux session running ansible, logging to file
+        tmux_cmd = f"tmux new-session -d -s {session_name} 'set -o pipefail; {ansible_cmd} 2>&1 | tee {log_file}; echo EXIT_CODE=$? >> {log_file}'"
+        run_ssh('root@maybelle.cryptograss.live', tmux_cmd, forward_agent=True)
+
+        print(f"Ansible running in tmux session '{session_name}' on maybelle")
+        print(f"Log file: {log_file}")
+        print("\nAttaching to session (Ctrl-B D to detach without stopping)...\n")
+
+        # Attach to the session so user can watch
         result = subprocess.run(
-            ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live', ansible_cmd],
+            ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live', f'tmux attach -t {session_name}'],
             check=False
         )
+
+        # If we got disconnected, session may still be running
+        if result.returncode != 0:
+            print("\nConnection lost. Checking if deployment is still running...")
+            check_result = run_ssh(
+                'root@maybelle.cryptograss.live',
+                f'tmux has-session -t {session_name} 2>/dev/null && echo "RUNNING" || echo "FINISHED"',
+                capture_output=True
+            )
+            if "RUNNING" in check_result.stdout:
+                print(f"\nDeployment still running in tmux session '{session_name}'")
+                print(f"Reconnect with: ssh -A root@maybelle.cryptograss.live tmux attach -t {session_name}")
+                print(f"Or check logs: ssh root@maybelle.cryptograss.live cat {log_file}")
+                return
+            else:
+                # Session finished, check exit code from log
+                exit_check = run_ssh(
+                    'root@maybelle.cryptograss.live',
+                    f'grep "EXIT_CODE=" {log_file} | tail -1',
+                    capture_output=True
+                )
+                if "EXIT_CODE=0" in exit_check.stdout:
+                    print("Deployment completed successfully!")
+                    result.returncode = 0
+                else:
+                    print(f"Deployment may have failed. Check log: {log_file}")
+                    result.returncode = 1
     finally:
         # Clean up vault password file
         run_ssh('root@maybelle.cryptograss.live', f'rm -f {vault_file_path}', forward_agent=True, check=False)
