@@ -10,7 +10,7 @@ services:
     volumes:
       - {{ base_dir }}/postgres-data:/var/lib/postgresql/data
     ports:
-      - "127.0.0.1:5432:5432"
+      - "10.0.0.3:5432:5432"
     networks:
       - magenta-net
     restart: unless-stopped
