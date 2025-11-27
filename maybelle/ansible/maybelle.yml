@@ -1,6 +1,7 @@
 ---
 - name: Provision Jenkins for Cryptograss
   hosts: all
+  connection: local
 
   vars_files:
     - ../../secrets/vault.yml
@@ -15,7 +16,15 @@
     jenkins_home: "/var/jenkins_home"
     caddy_config_type: "maybelle"  # Use maybelle-specific Caddyfile template
 
+  pre_tasks:
+    - name: Install community.docker collection
+      command: ansible-galaxy collection install community.docker
+      changed_when: false
+
   tasks:
+    # Note: maybelle-config repo is managed by the chapter scripts on the persistent volume
+    # No need to clone it here - we're already running from it
+
     - name: Install required packages
       apt:
         name:
@@ -24,6 +33,9 @@
           - curl
           - software-properties-common
           - docker.io
+          - docker-compose-v2
+          - docker-buildx
+          - ansible
         state: present
         update_cache: yes
 
@@ -92,6 +104,7 @@
         mode: '0644'
         owner: 1000
         group: 1000
+      notify: Restart Jenkins container
 
     - name: Start Jenkins container
       docker_container:
@@ -140,6 +153,14 @@
         state: present
         comment: "maybelle-backup@hunter"
 
+    - name: Deploy Jenkins GitHub SSH key from vault
+      copy:
+        content: "{{ jenkins_github_ssh_key | b64decode }}"
+        dest: "/var/jenkins_home/.ssh/id_ed25519"
+        mode: '0600'
+        owner: 1000
+        group: 1000
+
     - name: Deploy hunter root SSH key from vault
       copy:
         content: "{{ hunter_root_ssh_key | b64decode }}"
@@ -174,6 +195,17 @@
       ansible.builtin.shell:
         cmd: "ssh-keyscan -H github.com >> /var/jenkins_home/.ssh/known_hosts"
 
+    - name: Add hunter to jenkins user known_hosts
+      ansible.builtin.shell:
+        cmd: "ssh-keyscan -H hunter.cryptograss.live >> /var/jenkins_home/.ssh/known_hosts"
+
+    - name: Fix ownership of jenkins known_hosts
+      file:
+        path: /var/jenkins_home/.ssh/known_hosts
+        owner: 1000
+        group: 1000
+        mode: '0644'
+
     - name: Cronjob to rsync production builds to web servers
       ansible.builtin.cron:
         name: "push sites to prod"
@@ -194,6 +226,26 @@
         mode: '0644'
         owner: 1000
         group: 1000
+      notify: Restart Jenkins container
+
+    - name: Create Jenkins secrets directory
+      file:
+        path: "{{ jenkins_home }}/secrets/0"
+        state: directory
+        mode: '0755'
+        owner: 1000
+        group: 1000
+
+    - name: Deploy justinholmes.com .env file from vault
+      copy:
+        content: |
+          ALCHEMY_API_KEY={{ ALCHEMY_API_KEY }}
+          INFURA_API_KEY={{ INFURA_API_KEY }}
+          DISCORD_BOT_TOKEN={{ DISCORD_BOT_TOKEN }}
+        dest: "{{ jenkins_home }}/secrets/0/.env"
+        mode: '0600'
+        owner: 1000
+        group: 1000
 
     - name: Create PR builds directory
       file:
@@ -211,6 +263,99 @@
     - name: Print SSH trinket
       ansible.builtin.debug:
         msg: "{{ ssh_trinket['content'] | b64decode }}"
+
+    # Memory Lane services (Django web UI and MCP server)
+    - name: Create magenta directory
+      file:
+        path: /opt/magenta
+        state: directory
+        mode: '0755'
+
+    - name: Clone or update magenta repository
+      git:
+        repo: https://github.com/magent-cryptograss/magenta.git
+        dest: /opt/magenta/source
+        version: main
+        force: yes
+        update: yes
+        depth: 1
+      environment:
+        GIT_TERMINAL_PROMPT: "0"
+
+    - name: Create Memory Lane .env file
+      copy:
+        dest: /opt/magenta/source/.env
+        content: |
+          POSTGRES_HOST=10.0.0.3
+          POSTGRES_PORT=5432
+          POSTGRES_DB=magenta_memory
+          POSTGRES_USER=magent
+          POSTGRES_PASSWORD={{ memory_lane_postgres_password }}
+          DJANGO_ALLOWED_HOSTS=memory-lane.maybelle.cryptograss.live,localhost
+        mode: '0600'
+
+    - name: Create docker network for memory lane
+      docker_network:
+        name: memory-lane-net
+        state: present
+
+    - name: Create Memory Lane docker-compose file
+      copy:
+        dest: /opt/magenta/source/docker-compose.maybelle.yml
+        content: |
+          services:
+            memory-lane:
+              build:
+                context: .
+                dockerfile: Dockerfile.services
+              container_name: memory-lane
+              env_file: .env
+              environment:
+                - DJANGO_SETTINGS_MODULE=memory_viewer.settings
+              ports:
+                - "127.0.0.1:3000:3000"
+              networks:
+                - memory-lane-net
+              restart: unless-stopped
+              command: gunicorn --bind 0.0.0.0:3000 --workers 2 --access-logfile - memory_viewer.wsgi:application
+
+            mcp-server:
+              build:
+                context: .
+                dockerfile: Dockerfile.services
+              container_name: mcp-server
+              env_file: .env
+              environment:
+                - DJANGO_SETTINGS_MODULE=memory_viewer.settings
+              ports:
+                - "10.0.0.2:8000:8000"
+              networks:
+                - memory-lane-net
+              restart: unless-stopped
+              stdin_open: true
+              tty: true
+              command: python manage.py run_mcp_server_v2 --port 8000
+
+          networks:
+            memory-lane-net:
+              external: true
+              name: memory-lane-net
+        mode: '0644'
+
+    - name: Start Memory Lane services
+      community.docker.docker_compose_v2:
+        project_src: /opt/magenta/source
+        files:
+          - docker-compose.maybelle.yml
+        build: always
+        state: present
+
+  handlers:
+    - name: Restart Jenkins container
+      docker_container:
+        name: jenkins
+        state: started
+        restart: yes
 
   # Handlers are now in roles (caddy role has its own handlers)
 

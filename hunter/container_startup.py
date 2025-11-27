@@ -157,6 +157,17 @@ def configure_github_cli():
     logger.info("Authenticating GitHub CLI...")
     run_command(f"echo '{gh_token}' | gh auth login --with-token", user='magent')
     run_command("gh auth setup-git", user='magent')
+
+    # Configure git credential helper to use gh token for HTTPS auth
+    # Create a simple credential helper script
+    logger.info("Configuring git credential helper...")
+    helper_script = Path('/home/magent/.git-credential-helper.sh')
+    helper_script.write_text('''#!/bin/bash
+echo "username=magent-cryptograss"
+echo "password=$(gh auth token)"
+''')
+    run_command(f'chmod +x {helper_script}', user='magent')
+    run_command(f'git config --global credential.helper {helper_script}', user='magent')
     logger.info("✓ GitHub CLI authenticated")
 
 
@@ -180,6 +191,41 @@ def configure_mcp_server():
         check=False
     )
     logger.info("✓ Playwright MCP server configured (via Docker on magenta-net)")
+
+    # Add Jenkins MCP server (connects to Jenkins on maybelle)
+    run_command(
+        "claude mcp add --scope user --transport http jenkins https://maybelle.cryptograss.live/mcp-server/mcp",
+        user='magent',
+        check=False
+    )
+    logger.info("✓ Jenkins MCP server configured: https://maybelle.cryptograss.live/mcp-server/mcp")
+
+
+def configure_claude_settings():
+    """Configure Claude Code settings."""
+    logger.info("=== Configuring Claude Code settings ===")
+
+    settings_dir = Path.home() / '.claude'
+    settings_dir.mkdir(parents=True, exist_ok=True)
+    settings_file = settings_dir / 'settings.json'
+
+    # Read existing settings if they exist
+    if settings_file.exists():
+        import json
+        with open(settings_file, 'r') as f:
+            settings = json.load(f)
+    else:
+        settings = {}
+
+    # Set includeCoAuthoredBy to false
+    settings['includeCoAuthoredBy'] = False
+
+    # Write settings back
+    import json
+    with open(settings_file, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+    logger.info("✓ Claude Code settings configured")
 
 
 def setup_environment_variables():
@@ -254,6 +300,7 @@ def main():
         setup_environment_variables()
         configure_github_cli()
         configure_mcp_server()
+        configure_claude_settings()
         start_services()
 
         logger.info("=" * 60)

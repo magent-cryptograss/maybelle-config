@@ -77,7 +77,10 @@ RUN mkdir -p /home/magent/.config/gh \
 
 # Clone arthel repository from magent's fork
 ARG ARTHEL_REPO_URL=https://github.com/magent-cryptograss/arthel.git
-RUN git clone ${ARTHEL_REPO_URL} /home/magent/workspace/arthel
+RUN git clone ${ARTHEL_REPO_URL} /home/magent/workspace/arthel \
+    && cd /home/magent/workspace/arthel \
+    && git remote rename origin magent \
+    && git remote add upstream https://github.com/cryptograss/justinholmes.com.git
 
 # Install dependencies for arthel
 RUN cd /home/magent/workspace/arthel && npm install

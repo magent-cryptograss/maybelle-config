@@ -55,3 +55,38 @@ If `hostname` returns something else (like your laptop name), or `docker ps` fai
 - In a different environment
 
 Check `$DEVELOPER_NAME` environment variable - it's set on hunter containers.
+
+## GitHub Access
+
+When working in a user container on hunter, you're authenticated as `magent-cryptograss` via GitHub CLI:
+
+```bash
+gh auth status  # Check authentication
+```
+
+### Pushing Changes
+
+Since `magent-cryptograss` is a separate account from team members' personal accounts, you can't push directly to their repos. Instead:
+
+1. **Push to magent's fork:**
+   ```bash
+   # Add magent fork as remote (if not already added)
+   git remote add magent https://github.com/magent-cryptograss/[repo-name].git
+
+   # Push to a branch on magent's fork using GH_TOKEN
+   git push https://magent-cryptograss:${GH_TOKEN}@github.com/magent-cryptograss/[repo-name].git HEAD:[branch-name]
+   ```
+
+2. **Create a PR to the upstream repo:**
+   ```bash
+   gh pr create --repo [owner]/[repo] --base [base-branch] --head magent-cryptograss:[branch-name] --title "..." --body "..."
+   ```
+
+### Magent Forks
+
+The `magent-cryptograss` account maintains forks of:
+- `arthel` - Main website/build repository
+- `maybelle-config` - Jenkins and infrastructure config
+- `magenta` - Conversation memory system
+
+Check available repos with: `gh repo list magent-cryptograss`

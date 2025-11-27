@@ -10,7 +10,7 @@ pipelineJob('production') {
                     branch('*/production')
                 }
             }
-            scriptPath('deployment/Jenkinsfile')
+            scriptPath('integration/Jenkinsfile')
         }
     }
     triggers {

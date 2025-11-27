@@ -39,10 +39,11 @@
 
 - name: Copy shared CLAUDE.md to user .claude directory
   copy:
-    src: "{{ playbook_dir }}/../../CLAUDE.md"
+    src: "/opt/magenta/magenta-source/CLAUDE.md"
     dest: "{{ base_dir }}/{{ user.name }}/.claude/CLAUDE.md"
     owner: 1000
     group: 1000
+    remote_src: yes
 
 - name: Create user context file
   copy:
@@ -91,6 +92,17 @@
 - name: Wait for container to initialize (give startup script time to run)
   pause:
     seconds: 5
+
+- name: Deploy .env file from vault for arthel builds
+  copy:
+    content: |
+      ALCHEMY_API_KEY={{ ALCHEMY_API_KEY }}
+      INFURA_API_KEY={{ INFURA_API_KEY }}
+      DISCORD_BOT_TOKEN={{ DISCORD_BOT_TOKEN }}
+    dest: "{{ base_dir }}/{{ user.name }}/home/workspace/arthel/.env"
+    owner: 1000
+    group: 1000
+    mode: '0600'
 
 - name: Show container startup logs
   shell: docker logs {{ user.name }}-arthel

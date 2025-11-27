@@ -10,7 +10,7 @@ pipelineJob('fetch-chain-data') {
                     branch('*/production')
                 }
             }
-            scriptPath('deployment/Jenkinsfile-fetch-chain-data')
+            scriptPath('integration/Jenkinsfile-fetch-chain-data')
         }
     }
     triggers {

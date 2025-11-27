@@ -58,7 +58,7 @@ multibranchPipelineJob('branches') {
 
     factory {
         workflowBranchProjectFactory {
-            scriptPath('deployment/Jenkinsfile')
+            scriptPath('integration/Jenkinsfile')
         }
     }
 

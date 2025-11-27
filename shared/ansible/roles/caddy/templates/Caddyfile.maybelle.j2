@@ -1,3 +1,7 @@
+{
+    email admin@justinholmes.com
+}
+
 # Jenkins (automatic TLS with Let's Encrypt)
 {{ domain_name }} {
     reverse_proxy localhost:{{ jenkins_port }} {
@@ -11,4 +15,9 @@
 {{ domain_name }}:8081 {
     root * {{ jenkins_home }}/www/builds
     file_server browse
+}
+
+# Memory Lane web UI
+memory-lane.{{ domain_name }} {
+    reverse_proxy localhost:3000
 }

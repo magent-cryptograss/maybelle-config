@@ -1,0 +1,16 @@
+# Maybelle configuration
+# This file is read by the bootstrap and deploy scripts
+
+# Hetzner volume ID (auto-mounted at /mnt/HC_Volume_<id>)
+hetzner_volume_id: "104062902"
+
+# Canonical mount point (symlinked to Hetzner's auto-mount)
+mount_point: "/mnt/persist"
+
+# Host
+host: "maybelle.cryptograss.live"
+user: "root"
+
+# Vault password file location (on the persistent volume)
+# This file must be created manually: echo 'your-password' > /mnt/persist/.vault-password
+vault_password_file: "/mnt/persist/.vault-password"
