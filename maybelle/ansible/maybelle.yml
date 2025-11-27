@@ -361,6 +361,40 @@
         build: always
         state: present
 
+    # PostgreSQL backups
+    - name: Create postgres backup directory
+      file:
+        path: /opt/magenta/backups
+        state: directory
+        mode: '0750'
+
+    - name: Create postgres backup script
+      copy:
+        dest: /opt/magenta/backup-postgres.sh
+        mode: '0750'
+        content: |
+          #!/bin/bash
+          # Daily postgres backup with 7-day retention
+          BACKUP_DIR="/opt/magenta/backups"
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          BACKUP_FILE="$BACKUP_DIR/magenta_memory_$TIMESTAMP.sql.gz"
+
+          # Dump and compress
+          docker exec magenta-postgres pg_dump -U magent magenta_memory | gzip > "$BACKUP_FILE"
+
+          # Log
+          echo "$(date): Backup created: $BACKUP_FILE ($(stat -c%s "$BACKUP_FILE") bytes)" >> "$BACKUP_DIR/backup.log"
+
+          # Cleanup old backups (keep last 7 days)
+          find "$BACKUP_DIR" -name "magenta_memory_*.sql.gz" -mtime +7 -delete
+
+    - name: Schedule daily postgres backup
+      ansible.builtin.cron:
+        name: "postgres daily backup"
+        hour: "3"
+        minute: "0"
+        job: "/opt/magenta/backup-postgres.sh"
+
   handlers:
     - name: Restart Jenkins container
       docker_container:
