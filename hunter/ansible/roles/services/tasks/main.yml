@@ -1,22 +1,49 @@
 ---
-- name: Create .env file with secrets for services
+# Hunter services: only watcher (postgres, MCP, Memory Lane are on maybelle)
+- name: Create .env file for watcher
   copy:
     dest: "{{ base_dir }}/magenta-source/.env"
     content: |
-      POSTGRES_PASSWORD={{ postgres_password }}
       WATCHER_REMOTE_ENDPOINT=https://memory-lane.maybelle.cryptograss.live/api/ingest/
     mode: '0600'
 
-- name: Start shared services (MCP server, Memory Lane, Watcher)
-  command: docker compose -f docker-compose.services.yml up -d --build --force-recreate
-  args:
-    chdir: "{{ base_dir }}/magenta-source"
+- name: Create watcher-only docker-compose file
+  copy:
+    dest: "{{ base_dir }}/magenta-source/docker-compose.watcher.yml"
+    content: |
+      services:
+        watcher:
+          build:
+            context: .
+            dockerfile: Dockerfile.services
+          container_name: watcher
+          environment:
+            - DJANGO_SETTINGS_MODULE=memory_viewer.settings
+            - CLAUDE_LOGS_DIR=/project-logs/justin:/project-logs/rj:/project-logs/skyler
+            - WATCHER_ERA_NAME=Live Conversations
+            - WATCHER_REMOTE_ENDPOINT=${WATCHER_REMOTE_ENDPOINT}
+          volumes:
+            - /opt/magenta/justin/home/.claude/projects:/project-logs/justin:ro
+            - /opt/magenta/rj/home/.claude/projects:/project-logs/rj:ro
+            - /opt/magenta/skyler/home/.claude/projects:/project-logs/skyler:ro
+          restart: unless-stopped
+          command: python watcher/conversation_watcher.py
+    mode: '0644'
 
-- name: Verify services are running
-  command: docker ps --filter "name={{ item }}" --format "{% raw %}{{.Names}}{% endraw %}"
-  register: service_check
-  failed_when: "item not in service_check.stdout"
+- name: Stop old services that should no longer run on hunter
+  command: docker rm -f {{ item }}
   loop:
     - mcp-server
     - memory-lane
-    - watcher
+    - magenta-postgres
+  ignore_errors: yes
+
+- name: Start watcher service
+  command: docker compose -f docker-compose.watcher.yml up -d --build --force-recreate
+  args:
+    chdir: "{{ base_dir }}/magenta-source"
+
+- name: Verify watcher is running
+  command: docker ps --filter "name=watcher" --format "{% raw %}{{.Names}}{% endraw %}"
+  register: watcher_check
+  failed_when: "'watcher' not in watcher_check.stdout"

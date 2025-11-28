@@ -118,23 +118,27 @@ PYTHON_EOF
 
 echo "$FILTER_SCRIPT" | python3 - "$VAULT_FILE" "$DUMP_FILE" "$FILTERED_DUMP_FILE"
 
-# Step 3: Copy to maybelle
+# Step 3: Compress and copy to maybelle's backup directory
 echo ""
-echo "Step 3: Copying filtered dump to maybelle..."
-scp "$FILTERED_DUMP_FILE" "${MAYBELLE_USER}@${MAYBELLE_HOST}:/opt/magenta/database-dump.sql"
-echo "  Copied to ${MAYBELLE_HOST}:/opt/magenta/database-dump.sql"
+echo "Step 3: Compressing and copying to maybelle backup directory..."
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_FILENAME="magenta_memory_${TIMESTAMP}.sql.gz"
+
+gzip -c "$FILTERED_DUMP_FILE" > "/tmp/${BACKUP_FILENAME}"
+scp "/tmp/${BACKUP_FILENAME}" "${MAYBELLE_USER}@${MAYBELLE_HOST}:/mnt/persist/magenta/backups/${BACKUP_FILENAME}"
+echo "  Copied to ${MAYBELLE_HOST}:/mnt/persist/magenta/backups/${BACKUP_FILENAME}"
 
 # Cleanup local temp files
-rm -f "$DUMP_FILE" "$FILTERED_DUMP_FILE"
+rm -f "$DUMP_FILE" "$FILTERED_DUMP_FILE" "/tmp/${BACKUP_FILENAME}"
 
 echo ""
-echo "=== Migration dump ready ==="
+echo "=== Migration complete ==="
 echo ""
-echo "The filtered dump is now at /opt/magenta/database-dump.sql on maybelle."
+echo "The filtered backup is now at /mnt/persist/magenta/backups/${BACKUP_FILENAME}"
 echo ""
-echo "To import it, either:"
-echo "  1. Run chapter-1 again (ansible will import if dump exists)"
-echo "  2. Manually import:"
+echo "To restore:"
+echo "  1. If database is empty: Run chapter-1 (auto-restores from latest backup)"
+echo "  2. Manual restore:"
 echo "     ssh ${MAYBELLE_USER}@${MAYBELLE_HOST}"
-echo "     docker exec -i magenta-postgres psql -U magent -d magenta_memory < /opt/magenta/database-dump.sql"
+echo "     gunzip -c /mnt/persist/magenta/backups/${BACKUP_FILENAME} | docker exec -i magenta-postgres psql -U magent -d magenta_memory"
 echo ""
