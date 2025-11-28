@@ -2,15 +2,16 @@
 """
 Deploy hunter from your laptop via maybelle
 Runs ansible playbook on hunter with SSH agent forwarding
-Posts logs to Jenkins for history
+
+Note: PostgreSQL is now on maybelle, not hunter. Hunter only runs:
+- User containers
+- Watcher (posting to maybelle's ingest endpoint)
 """
 
 import subprocess
 import sys
-import tempfile
 import os
 from pathlib import Path
-from datetime import datetime
 
 
 def run_ssh(host, command, forward_agent=False, capture_output=False, check=True):
@@ -27,44 +28,6 @@ def run_ssh(host, command, forward_agent=False, capture_output=False, check=True
         check=check
     )
     return result
-
-
-def list_backups():
-    """List available database backups on maybelle"""
-    result = run_ssh(
-        'root@maybelle.cryptograss.live',
-        'ls -1 /var/jenkins_home/hunter-db-backups/*.dump 2>/dev/null | xargs -n 1 basename || echo "No backups found"',
-        capture_output=True
-    )
-    backups = [line.strip() for line in result.stdout.strip().split('\n') if line.strip() and line != 'No backups found']
-    return backups
-
-
-def select_backup():
-    """Prompt user to select a backup"""
-    print("\nAvailable database backups:")
-    backups = list_backups()
-
-    if not backups:
-        print("  (no backups available)")
-        return None
-
-    print("  0) Skip database restoration")
-    for i, backup in enumerate(backups, 1):
-        print(f"  {i}) {backup}")
-
-    while True:
-        try:
-            choice = input(f"\nSelect backup (0-{len(backups)}): ").strip()
-            idx = int(choice)
-            if idx == 0:
-                return None
-            if 1 <= idx <= len(backups):
-                return backups[idx - 1]
-            print("Invalid selection")
-        except (ValueError, KeyboardInterrupt):
-            print("\nCancelled")
-            sys.exit(0)
 
 
 def setup_ssh_agent(key_path):
@@ -95,7 +58,7 @@ def cleanup_ssh_agent():
     subprocess.run(['ssh-agent', '-k'], capture_output=True)
 
 
-def deploy_hunter(backup_file, vault_password):
+def deploy_hunter(vault_password):
     """Run ansible deployment on hunter FROM maybelle"""
     print("\n" + "=" * 60)
     print("DEPLOYING HUNTER")
@@ -128,7 +91,6 @@ def deploy_hunter(backup_file, vault_password):
     # Build ansible command - run from maybelle, targeting hunter
     # Create temp vault password file on maybelle
     print("Creating temporary vault password file on maybelle...")
-    import tempfile as tmp
     vault_file_path = '/tmp/vault_pass_' + str(os.getpid())
 
     # Write password to temp file on maybelle
@@ -138,12 +100,7 @@ def deploy_hunter(backup_file, vault_password):
     try:
         # Build ansible command using the temp vault file
         # Run from hunter/ansible directory so ansible.cfg is found
-        if backup_file:
-            print(f"Using database backup: {backup_file}\n")
-            ansible_cmd = f"cd /root/maybelle-config/hunter/ansible && ansible-playbook --vault-password-file={vault_file_path} -i inventory.yml playbook.yml -e db_backup_file=/var/jenkins_home/hunter-db-backups/{backup_file}"
-        else:
-            print("Skipping database restoration\n")
-            ansible_cmd = f"cd /root/maybelle-config/hunter/ansible && ansible-playbook --vault-password-file={vault_file_path} -i inventory.yml playbook.yml"
+        ansible_cmd = f"cd /root/maybelle-config/hunter/ansible && ansible-playbook --vault-password-file={vault_file_path} -i inventory.yml playbook.yml"
 
         # Run ansible FROM maybelle (ansible SSHs to hunter using our forwarded agent)
         result = subprocess.run(
@@ -186,6 +143,11 @@ def main():
     print("=" * 60)
     print("DEPLOY HUNTER VIA MAYBELLE")
     print("=" * 60)
+    print()
+    print("Note: PostgreSQL is now on maybelle. Hunter runs:")
+    print("  - User containers")
+    print("  - Watcher (posting to maybelle)")
+    print()
 
     # Check for vault password early
     try:
@@ -198,15 +160,9 @@ def main():
         print("  export ANSIBLE_VAULT_PASSWORD_FILE='/path/to/password/file'")
         sys.exit(1)
 
-    # Select backup
-    backup_file = select_backup()
-
     # Confirm
     print("\n" + "-" * 60)
-    if backup_file:
-        print(f"Will deploy hunter WITH database backup: {backup_file}")
-    else:
-        print("Will deploy hunter WITHOUT database restore")
+    print("Will deploy hunter (user containers + watcher)")
     print("-" * 60)
 
     confirm = input("\nContinue? (y/n): ").strip().lower()
@@ -220,7 +176,7 @@ def main():
 
     try:
         # Deploy
-        deploy_hunter(backup_file, vault_password)
+        deploy_hunter(vault_password)
         print("\n✓ SUCCESS")
 
     except Exception as e:
