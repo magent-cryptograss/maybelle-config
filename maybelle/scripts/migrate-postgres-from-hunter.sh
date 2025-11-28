@@ -38,9 +38,13 @@ VAULT_FILE="$REPO_DIR/secrets/vault.yml"
 echo "=== Migrate Postgres from Hunter to Maybelle ==="
 echo ""
 
-# Check for vault password
-if [ -z "$ANSIBLE_VAULT_PASSWORD" ]; then
-    echo "ERROR: ANSIBLE_VAULT_PASSWORD env var not set"
+# Get vault password from file or env var
+if [ -n "$ANSIBLE_VAULT_PASSWORD_FILE" ] && [ -f "$ANSIBLE_VAULT_PASSWORD_FILE" ]; then
+    ANSIBLE_VAULT_PASSWORD=$(cat "$ANSIBLE_VAULT_PASSWORD_FILE")
+    export ANSIBLE_VAULT_PASSWORD
+    echo "Using vault password from $ANSIBLE_VAULT_PASSWORD_FILE"
+elif [ -z "$ANSIBLE_VAULT_PASSWORD" ]; then
+    echo "ERROR: Neither ANSIBLE_VAULT_PASSWORD_FILE nor ANSIBLE_VAULT_PASSWORD is set"
     echo "This is needed to decrypt the vault for secrets filtering"
     exit 1
 fi
