@@ -1,13 +1,13 @@
 #!/bin/bash
 # Migrate postgres data from hunter to maybelle with secrets filtering
 #
-# Uses SSH agent forwarding (like deploy-hunter-remote.py) so your local
-# SSH key is used to reach hunter through maybelle.
+# Uses SSH agent forwarding so your local SSH key is used to reach hunter
+# through maybelle.
 #
 # Data flows: hunter → maybelle (over private network, not through your laptop)
 #
 # Prerequisites:
-#   - SSH key for hunter (~/.ssh/id_ed25519_hunter)
+#   - SSH access to both maybelle and hunter (uses your default SSH key)
 #   - ANSIBLE_VAULT_PASSWORD_FILE or ANSIBLE_VAULT_PASSWORD set
 #   - Vault file accessible locally (for decrypting secrets list)
 #
@@ -20,7 +20,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/../config.yml"
 VAULT_FILE="$REPO_DIR/secrets/vault.yml"
-SSH_KEY="$HOME/.ssh/id_ed25519_hunter"
 
 # Parse config.yml
 get_config() {
@@ -46,22 +45,8 @@ elif [ -z "$ANSIBLE_VAULT_PASSWORD" ]; then
     exit 1
 fi
 
-# Step 1: Set up SSH agent with hunter key
-echo "Step 1: Setting up SSH agent..."
-eval "$(ssh-agent -s)"
-trap 'ssh-agent -k > /dev/null 2>&1' EXIT
-
-if [ -f "$SSH_KEY" ]; then
-    ssh-add "$SSH_KEY"
-    echo "  Added $SSH_KEY to agent"
-else
-    echo "ERROR: SSH key not found: $SSH_KEY"
-    exit 1
-fi
-
-# Step 2: Extract secrets from vault (locally - just the secrets list, small)
-echo ""
-echo "Step 2: Extracting secrets from vault..."
+# Step 1: Extract secrets from vault (locally - just the secrets list, small)
+echo "Step 1: Extracting secrets from vault..."
 SECRETS_JSON=$(ansible-vault view "$VAULT_FILE" | python3 -c '
 import sys, yaml, json
 
@@ -84,9 +69,9 @@ print(json.dumps(secrets))
 SECRET_COUNT=$(echo "$SECRETS_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')
 echo "  Found $SECRET_COUNT secrets to filter"
 
-# Step 3: Run the migration FROM maybelle (with agent forwarding)
+# Step 2: Run the migration FROM maybelle (with agent forwarding)
 echo ""
-echo "Step 3: SSHing to maybelle to run migration..."
+echo "Step 2: SSHing to maybelle to run migration..."
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILENAME="magenta_memory_${TIMESTAMP}.sql.gz"
 
