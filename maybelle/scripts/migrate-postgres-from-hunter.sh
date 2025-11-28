@@ -45,7 +45,7 @@ elif [ -z "$ANSIBLE_VAULT_PASSWORD" ]; then
     exit 1
 fi
 
-# Step 1: Extract secrets from vault (locally - just the secrets list, small)
+# Step 1: Extract secrets from vault and upload to maybelle
 echo "Step 1: Extracting secrets from vault..."
 SECRETS_JSON=$(ansible-vault view "$VAULT_FILE" | python3 -c '
 import sys, yaml, json
@@ -69,42 +69,43 @@ print(json.dumps(secrets))
 SECRET_COUNT=$(echo "$SECRETS_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')
 echo "  Found $SECRET_COUNT secrets to filter"
 
+# Upload secrets to temp file on maybelle (avoids shell escaping issues)
+SECRETS_TEMPFILE="/tmp/migrate_secrets_$$.json"
+echo "$SECRETS_JSON" | ssh "${MAYBELLE_USER}@${MAYBELLE_HOST}" "cat > $SECRETS_TEMPFILE && chmod 600 $SECRETS_TEMPFILE"
+echo "  Uploaded secrets list to maybelle"
+
 # Step 2: Run the migration FROM maybelle (with agent forwarding)
 echo ""
 echo "Step 2: SSHing to maybelle to run migration..."
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILENAME="magenta_memory_${TIMESTAMP}.sql.gz"
 
-# Escape the secrets JSON for shell
-SECRETS_ESCAPED=$(printf '%s' "$SECRETS_JSON" | sed "s/'/'\\\\''/g")
-
 # SSH to maybelle with agent forwarding (-A), which then SSHs to hunter
-ssh -A "${MAYBELLE_USER}@${MAYBELLE_HOST}" bash -s "$SECRETS_ESCAPED" "$BACKUP_FILENAME" << 'REMOTE_SCRIPT'
+ssh -A "${MAYBELLE_USER}@${MAYBELLE_HOST}" bash -s "$BACKUP_FILENAME" "$SECRETS_TEMPFILE" << 'REMOTE_SCRIPT'
 set -e
-SECRETS_JSON="$1"
-BACKUP_FILENAME="$2"
+BACKUP_FILENAME="$1"
+SECRETS_FILE="$2"
 
 echo "  Pulling database from hunter and filtering secrets..."
-
-# Create filter script
-FILTER_PY=$(cat <<'PYTHON_EOF'
-import sys, json
-secrets = json.loads(sys.argv[1])
-for line in sys.stdin:
-    for secret in secrets:
-        if secret in line:
-            line = line.replace(secret, '[REDACTED:VAULT_SECRET]')
-    sys.stdout.write(line)
-PYTHON_EOF
-)
 
 # Ensure backup directory exists
 mkdir -p /mnt/persist/magenta/backups
 
 # Pull from hunter (using forwarded agent), filter, compress, save
 ssh root@hunter.cryptograss.live "docker exec magenta-postgres pg_dump -U magent magenta_memory" | \
-    python3 -c "$FILTER_PY" "$SECRETS_JSON" | \
-    gzip > "/mnt/persist/magenta/backups/${BACKUP_FILENAME}"
+    python3 -c "
+import sys, json
+with open('$SECRETS_FILE') as f:
+    secrets = json.load(f)
+for line in sys.stdin:
+    for secret in secrets:
+        if secret in line:
+            line = line.replace(secret, '[REDACTED:VAULT_SECRET]')
+    sys.stdout.write(line)
+" | gzip > "/mnt/persist/magenta/backups/${BACKUP_FILENAME}"
+
+# Clean up secrets file
+rm -f "$SECRETS_FILE"
 
 # Report size
 SIZE=$(stat -c%s "/mnt/persist/magenta/backups/${BACKUP_FILENAME}")
