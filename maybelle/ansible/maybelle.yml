@@ -362,6 +362,16 @@
         build: always
         state: present
 
+    - name: Wait for postgres to be ready
+      command: docker exec magenta-postgres pg_isready -U magent
+      register: pg_ready
+      until: pg_ready.rc == 0
+      retries: 10
+      delay: 2
+
+    - name: Run Django migrations
+      command: docker exec memory-lane python manage.py migrate --noinput
+
     # PostgreSQL backups
     - name: Create postgres backup directory
       file:
