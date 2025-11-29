@@ -39,6 +39,10 @@
     - magenta-postgres
   ignore_errors: yes
 
+- name: Remove existing watcher container
+  command: docker rm -f watcher
+  ignore_errors: yes
+
 - name: Start watcher service
   command: docker compose -f docker-compose.watcher.yml up -d --build --force-recreate
   args:
