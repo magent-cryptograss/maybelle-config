@@ -5,6 +5,7 @@
     dest: "{{ base_dir }}/magenta-source/.env"
     content: |
       WATCHER_REMOTE_ENDPOINT=https://memory-lane.maybelle.cryptograss.live/api/ingest/
+      INGEST_API_KEY={{ ingest_api_key }}
     mode: '0600'
 
 - name: Create watcher-only docker-compose file
@@ -17,11 +18,11 @@
             context: .
             dockerfile: Dockerfile.services
           container_name: watcher
+          env_file: .env
           environment:
             - DJANGO_SETTINGS_MODULE=memory_viewer.settings
             - CLAUDE_LOGS_DIR=/project-logs/justin:/project-logs/rj:/project-logs/skyler
             - WATCHER_ERA_NAME=Live Conversations
-            - WATCHER_REMOTE_ENDPOINT=${WATCHER_REMOTE_ENDPOINT}
           volumes:
             - /opt/magenta/justin/home/.claude/projects:/project-logs/justin:ro
             - /opt/magenta/rj/home/.claude/projects:/project-logs/rj:ro
