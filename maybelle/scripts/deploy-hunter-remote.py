@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """
 Deploy hunter from your laptop via maybelle
-Runs ansible playbook on hunter with SSH agent forwarding
+Runs ansible playbook on hunter using maybelle's SSH key
 
 Note: PostgreSQL is now on maybelle, not hunter. Hunter only runs:
 - User containers
 - Watcher (posting to maybelle's ingest endpoint)
+
+Prerequisites:
+- SSH access to maybelle from your laptop
+- Maybelle has SSH access to hunter (via its own key)
+- Vault password available via ANSIBLE_VAULT_PASSWORD or ANSIBLE_VAULT_PASSWORD_FILE
 """
 
 import subprocess
 import sys
 import os
-from pathlib import Path
 
 
-def run_ssh(host, command, forward_agent=False, capture_output=False, check=True):
-    """Run SSH command"""
+def run_ssh(host, command, capture_output=False, check=True, allocate_tty=False):
+    """Run SSH command on remote host"""
     ssh_cmd = ['ssh']
-    if forward_agent:
-        ssh_cmd.append('-A')
+    if allocate_tty:
+        ssh_cmd.append('-t')
     ssh_cmd.extend([host, command])
 
     result = subprocess.run(
@@ -30,40 +34,14 @@ def run_ssh(host, command, forward_agent=False, capture_output=False, check=True
     return result
 
 
-def setup_ssh_agent(key_path):
-    """Start SSH agent and add key"""
-    print("\nSetting up SSH agent...")
-
-    # Start ssh-agent
-    result = subprocess.run(['ssh-agent', '-s'], capture_output=True, text=True)
-
-    # Parse and set environment variables
-    for line in result.stdout.split('\n'):
-        if '=' in line and ';' in line:
-            line = line.split(';')[0]
-            key, value = line.split('=', 1)
-            os.environ[key] = value
-
-    # Add key (will prompt for passphrase)
-    result = subprocess.run(['ssh-add', key_path])
-    if result.returncode != 0:
-        print("Failed to add SSH key")
-        sys.exit(1)
-
-    print("✓ SSH agent configured")
-
-
-def cleanup_ssh_agent():
-    """Kill SSH agent"""
-    subprocess.run(['ssh-agent', '-k'], capture_output=True)
-
-
 def deploy_hunter(vault_password):
     """Run ansible deployment on hunter FROM maybelle"""
     print("\n" + "=" * 60)
     print("DEPLOYING HUNTER")
     print("=" * 60)
     print()
+
+    maybelle = 'root@maybelle.cryptograss.live'
 
     # First, ensure maybelle-config repo is on maybelle and up to date
     print("Updating maybelle-config repository on maybelle...")
@@ -85,31 +63,35 @@ def deploy_hunter(vault_password):
             exit 1
         fi
     '''
-    run_ssh('root@maybelle.cryptograss.live', repo_setup, forward_agent=True)
+    run_ssh(maybelle, repo_setup)
     print("✓ Repository updated\n")
 
-    # Build ansible command - run from maybelle, targeting hunter
     # Create temp vault password file on maybelle
     print("Creating temporary vault password file on maybelle...")
     vault_file_path = '/tmp/vault_pass_' + str(os.getpid())
 
-    # Write password to temp file on maybelle
-    write_vault = f"echo '{vault_password}' > {vault_file_path} && chmod 600 {vault_file_path}"
-    run_ssh('root@maybelle.cryptograss.live', write_vault, forward_agent=True)
+    # Escape single quotes in password for shell
+    escaped_password = vault_password.replace("'", "'\"'\"'")
+    write_vault = f"echo '{escaped_password}' > {vault_file_path} && chmod 600 {vault_file_path}"
+    run_ssh(maybelle, write_vault)
 
     try:
         # Build ansible command using the temp vault file
         # Run from hunter/ansible directory so ansible.cfg is found
+        # Maybelle uses its own SSH key to reach hunter (no agent forwarding needed)
         ansible_cmd = f"cd /root/maybelle-config/hunter/ansible && ansible-playbook --vault-password-file={vault_file_path} -i inventory.yml playbook.yml"
 
-        # Run ansible FROM maybelle (ansible SSHs to hunter using our forwarded agent)
+        print("Running ansible playbook on maybelle (targeting hunter)...")
+        print()
+
+        # Run ansible FROM maybelle - maybelle SSHs to hunter using its own key
         result = subprocess.run(
-            ['ssh', '-A', '-t', 'root@maybelle.cryptograss.live', ansible_cmd],
+            ['ssh', '-t', maybelle, ansible_cmd],
             check=False
         )
     finally:
         # Clean up vault password file
-        run_ssh('root@maybelle.cryptograss.live', f'rm -f {vault_file_path}', forward_agent=True, check=False)
+        run_ssh(maybelle, f'rm -f {vault_file_path}', check=False)
 
     print()
     print("=" * 60)
@@ -170,22 +152,14 @@ def main():
         print("Cancelled")
         sys.exit(0)
 
-    # Setup SSH agent
-    key_path = str(Path.home() / '.ssh' / 'id_ed25519_hunter')
-    setup_ssh_agent(key_path)
-
     try:
-        # Deploy
+        # Deploy - no local SSH agent needed, maybelle has its own key
         deploy_hunter(vault_password)
         print("\n✓ SUCCESS")
 
     except Exception as e:
         print(f"\n✗ FAILED: {e}")
         sys.exit(1)
-
-    finally:
-        cleanup_ssh_agent()
-        print("SSH agent cleaned up")
 
 
 if __name__ == '__main__':
