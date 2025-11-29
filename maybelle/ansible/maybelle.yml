@@ -390,7 +390,7 @@
 
     - name: Restore from latest backup if database is empty
       shell: |
-        gunzip -c "{{ latest_backup.stdout }}" | grep -v '^\\restrict ' | docker exec -i magenta-postgres psql -U magent -d magenta_memory
+        gunzip -c "{{ latest_backup.stdout }}" | docker exec -i magenta-postgres psql -U magent -d magenta_memory
       when:
         - db_message_count.stdout | trim | int == 0
         - latest_backup.stdout | default('') | length > 0
@@ -413,8 +413,8 @@
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
           BACKUP_FILE="$BACKUP_DIR/magenta_memory_$TIMESTAMP.sql.gz"
 
-          # Dump and compress
-          docker exec magenta-postgres pg_dump -U magent magenta_memory | gzip > "$BACKUP_FILE"
+          # Dump and compress (--no-restrict-psql for portable restores)
+          docker exec magenta-postgres pg_dump --no-restrict-psql -U magent magenta_memory | gzip > "$BACKUP_FILE"
 
           # Log
           echo "$(date): Backup created: $BACKUP_FILE ($(stat -c%s "$BACKUP_FILE") bytes)" >> "$BACKUP_DIR/backup.log"
