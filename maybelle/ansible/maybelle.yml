@@ -385,25 +385,37 @@
 
     - name: List available backups
       shell: |
-        echo "Available backups (by size, largest first):"
-        ls -lhS /mnt/persist/magenta/backups/magenta_memory_*.dump /mnt/persist/magenta/backups/magenta_memory_*.sql.gz 2>/dev/null | awk '{print NR": "$5" "$9}'
+        ls -lhS /mnt/persist/magenta/backups/magenta_memory_*.dump /mnt/persist/magenta/backups/magenta_memory_*.sql.gz 2>/dev/null | awk '{print NR") "$5" "$9}'
       register: available_backups
       when: db_message_count.stdout | trim | int == 0
 
     - name: Show available backups
       debug:
         msg: "{{ available_backups.stdout_lines }}"
-      when: db_message_count.stdout | trim | int == 0
+      when:
+        - db_message_count.stdout | trim | int == 0
+        - available_backups.stdout | length > 0
 
     - name: Prompt for backup selection
       pause:
-        prompt: "Enter backup filename to restore (or press Enter to skip)"
+        prompt: "Enter number to restore (1, 2, etc) or press Enter to skip"
       register: backup_selection
-      when: db_message_count.stdout | trim | int == 0
+      when:
+        - db_message_count.stdout | trim | int == 0
+        - available_backups.stdout | length > 0
+
+    - name: Get selected backup filename
+      shell: |
+        ls -lhS /mnt/persist/magenta/backups/magenta_memory_*.dump /mnt/persist/magenta/backups/magenta_memory_*.sql.gz 2>/dev/null | awk 'NR=={{ backup_selection.user_input }} {print $9}'
+      register: selected_backup
+      when:
+        - db_message_count.stdout | trim | int == 0
+        - backup_selection.user_input | default('') | length > 0
+        - backup_selection.user_input | int > 0
 
     - name: Restore from selected backup
       shell: |
-        BACKUP_FILE="{{ backup_selection.user_input }}"
+        BACKUP_FILE="{{ selected_backup.stdout }}"
         if [[ "$BACKUP_FILE" == *.dump ]]; then
           # Custom format: use pg_restore
           docker exec -i magenta-postgres pg_restore -U magent -d magenta_memory --no-owner --no-privileges < "$BACKUP_FILE"
@@ -413,12 +425,12 @@
         fi
       when:
         - db_message_count.stdout | trim | int == 0
-        - backup_selection.user_input | default('') | length > 0
+        - selected_backup.stdout | default('') | length > 0
       register: restore_result
 
     - name: Report restore status
       debug:
-        msg: "Restored database from {{ backup_selection.user_input }}"
+        msg: "Restored database from {{ selected_backup.stdout }}"
       when: restore_result is defined and restore_result.changed | default(false)
 
     # PostgreSQL backups (backup directory already created above)
