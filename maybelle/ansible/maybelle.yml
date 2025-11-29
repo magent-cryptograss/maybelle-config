@@ -169,6 +169,17 @@
         owner: root
         group: root
 
+    - name: Configure SSH to use hunter key
+      copy:
+        dest: "/root/.ssh/config"
+        content: |
+          Host hunter.cryptograss.live
+            IdentityFile ~/.ssh/id_ed25519_hunter
+            User root
+        mode: '0600'
+        owner: root
+        group: root
+
     - name: Add hunter to known_hosts
       ansible.builtin.shell:
         cmd: "ssh-keyscan -H hunter.cryptograss.live >> /root/.ssh/known_hosts"
