@@ -21,3 +21,8 @@
 memory-lane.{{ domain_name }} {
     reverse_proxy localhost:3000
 }
+
+# MCP server (for Claude Code memory access)
+mcp.{{ domain_name }} {
+    reverse_proxy 10.0.0.2:8000
+}
