@@ -67,6 +67,38 @@ def get_db_connection():
     )
 
 
+def scrub_json_value(value, secrets: List[str]) -> Tuple[any, bool]:
+    """Recursively scrub secrets from a JSON value. Returns (new_value, was_modified)."""
+    modified = False
+
+    if isinstance(value, str):
+        new_value = value
+        for secret in secrets:
+            if secret in new_value:
+                new_value = new_value.replace(secret, '[REDACTED]')
+                modified = True
+        return new_value, modified
+
+    elif isinstance(value, list):
+        new_list = []
+        for item in value:
+            new_item, item_modified = scrub_json_value(item, secrets)
+            new_list.append(new_item)
+            modified = modified or item_modified
+        return new_list, modified
+
+    elif isinstance(value, dict):
+        new_dict = {}
+        for k, v in value.items():
+            new_v, v_modified = scrub_json_value(v, secrets)
+            new_dict[k] = new_v
+            modified = modified or v_modified
+        return new_dict, modified
+
+    else:
+        return value, False
+
+
 def check_with_secrets_list(secrets: List[str], fix: bool = False) -> List[Tuple[int, str, str]]:
     """Check database for secrets using a local secrets list."""
     conn = get_db_connection()
@@ -75,7 +107,7 @@ def check_with_secrets_list(secrets: List[str], fix: bool = False) -> List[Tuple
     findings = []
     fixed_count = 0
 
-    # Get all messages
+    # Get all messages - content is JSONB, fetch as text for initial scan
     cur.execute("SELECT id, content FROM conversations_message")
     rows = cur.fetchall()
 
@@ -85,23 +117,25 @@ def check_with_secrets_list(secrets: List[str], fix: bool = False) -> List[Tuple
         if not content:
             continue
 
-        found_secrets = []
-        new_content = content
+        # Convert to string for quick check
+        content_str = json.dumps(content) if not isinstance(content, str) else content
 
+        # Quick check - any secrets present?
+        found_secrets = []
         for secret in secrets:
-            if secret in content:
-                # Mask the secret for display (show first 4 chars)
+            if secret in content_str:
                 masked = secret[:4] + '...' + secret[-2:] if len(secret) > 6 else '****'
                 found_secrets.append(masked)
-                new_content = new_content.replace(secret, '[REDACTED]')
 
         if found_secrets:
-            findings.append((msg_id, ', '.join(found_secrets), content[:100]))
+            findings.append((msg_id, ', '.join(found_secrets), content_str[:100]))
 
             if fix:
+                # Recursively scrub the JSON structure
+                new_content, _ = scrub_json_value(content, secrets)
                 cur.execute(
                     "UPDATE conversations_message SET content = %s WHERE id = %s",
-                    (new_content, msg_id)
+                    (json.dumps(new_content), msg_id)
                 )
                 fixed_count += 1
 
@@ -134,21 +168,22 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
     # Process in batches
     cur.execute("SELECT id, content FROM conversations_message ORDER BY id")
 
-    batch = []
-    batch_ids = []
+    batch = []  # (msg_id, content_as_json_str, original_content)
 
     for msg_id, content in cur:
         if not content:
             continue
 
-        batch.append(content)
-        batch_ids.append(msg_id)
+        # Convert JSONB to string for scrubber
+        content_str = json.dumps(content) if not isinstance(content, str) else content
+        batch.append((msg_id, content_str, content))
 
         if len(batch) >= batch_size:
             # Send batch to scrubber
+            texts = [item[1] for item in batch]
             response = requests.post(
                 f"{scrubber_url}/scrub/batch",
-                json={"texts": batch},
+                json={"texts": texts},
                 timeout=30
             )
 
@@ -156,25 +191,30 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
                 result = response.json()
                 scrubbed = result['texts']
 
-                for i, (orig, scrub, mid) in enumerate(zip(batch, scrubbed, batch_ids)):
-                    if orig != scrub:
-                        findings.append((mid, orig[:100]))
+                for (mid, orig_str, orig_content), scrub_str in zip(batch, scrubbed):
+                    if orig_str != scrub_str:
+                        findings.append((mid, orig_str[:100]))
 
                         if fix:
+                            # Parse back to JSON and update
+                            try:
+                                new_content = json.loads(scrub_str)
+                            except json.JSONDecodeError:
+                                new_content = scrub_str
                             cur.execute(
                                 "UPDATE conversations_message SET content = %s WHERE id = %s",
-                                (scrub, mid)
+                                (json.dumps(new_content), mid)
                             )
                             fixed_count += 1
 
             batch = []
-            batch_ids = []
 
     # Process remaining
     if batch:
+        texts = [item[1] for item in batch]
         response = requests.post(
             f"{scrubber_url}/scrub/batch",
-            json={"texts": batch},
+            json={"texts": texts},
             timeout=30
         )
 
@@ -182,14 +222,18 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
             result = response.json()
             scrubbed = result['texts']
 
-            for i, (orig, scrub, mid) in enumerate(zip(batch, scrubbed, batch_ids)):
-                if orig != scrub:
-                    findings.append((mid, orig[:100]))
+            for (mid, orig_str, orig_content), scrub_str in zip(batch, scrubbed):
+                if orig_str != scrub_str:
+                    findings.append((mid, orig_str[:100]))
 
                     if fix:
+                        try:
+                            new_content = json.loads(scrub_str)
+                        except json.JSONDecodeError:
+                            new_content = scrub_str
                         cur.execute(
                             "UPDATE conversations_message SET content = %s WHERE id = %s",
-                            (scrub, mid)
+                            (json.dumps(new_content), mid)
                         )
                         fixed_count += 1
 
@@ -206,7 +250,8 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
 def count_redacted(conn) -> int:
     """Count messages that contain [REDACTED]."""
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM conversations_message WHERE content LIKE '%[REDACTED]%'")
+    # content is JSONB, so cast to text for LIKE search
+    cur.execute("SELECT COUNT(*) FROM conversations_message WHERE content::text LIKE '%[REDACTED]%'")
     count = cur.fetchone()[0]
     cur.close()
     return count
