@@ -299,7 +299,7 @@
 
     - name: Extract vault secrets for scrubbing
       shell: |
-        ansible-vault view ../../secrets/vault.yml | python3 -c "
+        ansible-vault view --vault-password-file /mnt/persist/.vault-password ../../secrets/vault.yml | python3 -c "
         import sys, yaml, json
         data = yaml.safe_load(sys.stdin)
         secrets = [v for v in data.values() if isinstance(v, str) and len(v) > 4]
@@ -307,8 +307,6 @@
         "
       args:
         chdir: "{{ playbook_dir }}"
-      environment:
-        ANSIBLE_VAULT_PASSWORD_FILE: "{{ lookup('env', 'ANSIBLE_VAULT_PASSWORD_FILE') }}"
       register: scrub_secrets_json
 
     - name: Create Memory Lane .env file
