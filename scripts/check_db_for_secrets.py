@@ -234,6 +234,23 @@ def test_scrubber(scrubber_url: str, test_secret: str = None) -> bool:
     return False
 
 
+def check_filesystem_secrets() -> List[str]:
+    """Check for secret files that shouldn't exist on disk."""
+    findings = []
+
+    paths_to_check = [
+        ('/mnt/persist/.vault-password', 'Vault password file - should be removed after deploy'),
+        ('/mnt/persist/scrubber-secrets/secrets.json', 'Old scrubber secrets location - should use docker volume'),
+        ('/tmp/scrubber-secrets.json', 'Temp scrubber secrets - should be deleted after deploy'),
+    ]
+
+    for path, description in paths_to_check:
+        if os.path.exists(path):
+            findings.append(f"  ⚠ {path}: {description}")
+
+    return findings
+
+
 def main():
     parser = argparse.ArgumentParser(description='Check database for unredacted secrets')
     parser.add_argument('--secrets-stdin', action='store_true',
@@ -246,8 +263,23 @@ def main():
                         help='Just show stats, no scanning')
     parser.add_argument('--test-secret', type=str,
                         help='Test scrubber with a known secret (verifies scrubber is working)')
+    parser.add_argument('--check-filesystem', action='store_true',
+                        help='Check for secret files on filesystem (run on maybelle host, not in container)')
 
     args = parser.parse_args()
+
+    # Filesystem check mode
+    if args.check_filesystem:
+        print("Checking filesystem for secret files...")
+        findings = check_filesystem_secrets()
+        if findings:
+            print("Found secrets on filesystem:")
+            for f in findings:
+                print(f)
+            print("\nConsider removing these after verifying they're not needed.")
+        else:
+            print("  ✓ No unexpected secret files found")
+        return
 
     # Stats mode - just show counts
     if args.stats_only:

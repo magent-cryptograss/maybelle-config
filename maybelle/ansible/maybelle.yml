@@ -526,6 +526,19 @@
         minute: "0"
         job: "/mnt/persist/magenta/backup-postgres.sh"
 
+    # Security: remove vault password after deploy completes
+    # The encrypted vault.yml is in a public repo, so vault password on disk is a risk
+    # Re-run chapter-1.sh to restore it if needed for future deploys
+    - name: Remove vault password file
+      file:
+        path: /mnt/persist/.vault-password
+        state: absent
+
+    - name: Clean up old scrubber secrets directory if exists
+      file:
+        path: /mnt/persist/scrubber-secrets
+        state: absent
+
   handlers:
     - name: Restart Jenkins container
       docker_container:
