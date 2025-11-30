@@ -107,10 +107,18 @@ def setup_workspace():
             run_install=True
         )
 
-    # Clone magenta (for CLAUDE.md and WAKEUP.md)
+    # Clone magenta (for CLAUDE.md and identity docs)
     ensure_repo_cloned(
         "https://github.com/magent-cryptograss/magenta.git",
         workspace / "magenta",
+        user='magent',
+        run_install=False
+    )
+
+    # Clone memory-lane (Django memory system)
+    ensure_repo_cloned(
+        "https://github.com/jMyles/memory-lane.git",
+        workspace / "memory-lane",
         user='magent',
         run_install=False
     )
@@ -133,9 +141,9 @@ def setup_claude_config():
 
     # Symlink .env for Django dev server database access
     setup_symlink(
-        "/opt/magenta/magenta-source/.env",
-        "/home/magent/workspace/magenta/.env",
-        ".env file for local dev database access"
+        "/opt/magenta/memory-lane-source/.env",
+        "/home/magent/workspace/memory-lane/.env",
+        ".env file for memory-lane database access"
     )
 
     # Fix permissions

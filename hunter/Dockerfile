@@ -85,10 +85,15 @@ RUN git clone ${ARTHEL_REPO_URL} /home/magent/workspace/arthel \
 # Install dependencies for arthel
 RUN cd /home/magent/workspace/arthel && npm install
 
-# Clone magenta repository
+# Clone magenta repository (identity, CLAUDE.md)
 ARG MAGENTA_REPO_URL=https://github.com/magent-cryptograss/magenta.git
-ARG MAGENTA_BRANCH=production
+ARG MAGENTA_BRANCH=main
 RUN git clone --branch ${MAGENTA_BRANCH} ${MAGENTA_REPO_URL} /home/magent/workspace/magenta
+
+# Clone memory-lane repository (Django app, MCP server)
+ARG MEMORY_LANE_REPO_URL=https://github.com/jMyles/memory-lane.git
+ARG MEMORY_LANE_BRANCH=main
+RUN git clone --branch ${MEMORY_LANE_BRANCH} ${MEMORY_LANE_REPO_URL} /home/magent/workspace/memory-lane
 
 # Switch to root to install uv and Python dependencies
 USER root
@@ -97,8 +102,8 @@ USER root
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
 
-# Install Python dependencies for magenta using uv
-RUN /root/.local/bin/uv pip install --python /usr/bin/python3 --break-system-packages -r /home/magent/workspace/magenta/requirements.txt
+# Install Python dependencies for memory-lane using uv
+RUN /root/.local/bin/uv pip install --python /usr/bin/python3 --break-system-packages -r /home/magent/workspace/memory-lane/requirements.txt
 
 # Copy startup script
 COPY container_startup.py /usr/local/bin/

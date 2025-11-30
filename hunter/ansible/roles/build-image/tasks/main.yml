@@ -12,18 +12,18 @@
   args:
     chdir: "{{ base_dir }}/maybelle-config"
 
-- name: Clone or update magenta repository (for watcher)
+- name: Clone or update memory-lane repository (for watcher)
   git:
-    repo: https://github.com/magent-cryptograss/magenta.git
-    dest: "{{ base_dir }}/magenta-source"
+    repo: https://github.com/jMyles/memory-lane.git
+    dest: "{{ base_dir }}/memory-lane-source"
     version: main
     force: yes
     update: yes
 
-- name: Force fetch latest magenta changes from main branch
+- name: Force fetch latest memory-lane changes from main branch
   shell: git fetch origin main && git reset --hard origin/main
   args:
-    chdir: "{{ base_dir }}/magenta-source"
+    chdir: "{{ base_dir }}/memory-lane-source"
 
 - name: Get docker group GID from host
   shell: "getent group docker | cut -d: -f3"
