@@ -318,6 +318,7 @@
         state: present
 
     # PostgreSQL for Memory Lane
+    # Exposed on 10.0.0.2 (Hetzner private network) for dev access from hunter
     - name: Include postgres role
       include_role:
         name: postgres
@@ -327,6 +328,7 @@
         postgres_db: magenta_memory
         postgres_network: memory-lane-net
         postgres_network_external: true
+        postgres_bind_address: "10.0.0.2"  # Hetzner private network - allows hunter to connect
 
     - name: Create Memory Lane docker-compose file
       copy:
