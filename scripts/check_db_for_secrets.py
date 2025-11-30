@@ -203,6 +203,37 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
     return findings
 
 
+def count_redacted(conn) -> int:
+    """Count messages that contain [REDACTED]."""
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM conversations_message WHERE content LIKE '%[REDACTED]%'")
+    count = cur.fetchone()[0]
+    cur.close()
+    return count
+
+
+def test_scrubber(scrubber_url: str, test_secret: str = None) -> bool:
+    """Test that scrubber is actually redacting by sending a known secret."""
+    import requests
+
+    # If no test secret provided, just check health
+    if not test_secret:
+        response = requests.get(f"{scrubber_url}/health")
+        return response.status_code == 200 and response.json().get('secrets_loaded', 0) > 0
+
+    # Test with actual secret
+    response = requests.post(
+        f"{scrubber_url}/scrub",
+        json={"text": f"Testing with secret: {test_secret}"},
+        timeout=10
+    )
+
+    if response.status_code == 200:
+        result = response.json()
+        return result.get('redacted', False)
+    return False
+
+
 def main():
     parser = argparse.ArgumentParser(description='Check database for unredacted secrets')
     parser.add_argument('--secrets-stdin', action='store_true',
@@ -211,8 +242,53 @@ def main():
                         help='URL of scrubber service (e.g., http://scrubber:8001)')
     parser.add_argument('--fix', action='store_true',
                         help='Actually redact the secrets (default is dry-run)')
+    parser.add_argument('--stats-only', action='store_true',
+                        help='Just show stats, no scanning')
+    parser.add_argument('--test-secret', type=str,
+                        help='Test scrubber with a known secret (verifies scrubber is working)')
 
     args = parser.parse_args()
+
+    # Stats mode - just show counts
+    if args.stats_only:
+        conn = get_db_connection()
+        cur = conn.cursor()
+
+        cur.execute("SELECT COUNT(*) FROM conversations_message")
+        total = cur.fetchone()[0]
+
+        redacted_count = count_redacted(conn)
+
+        cur.execute("SELECT MIN(created_at), MAX(created_at) FROM conversations_message")
+        min_date, max_date = cur.fetchone()
+
+        print(f"Database stats:")
+        print(f"  Total messages: {total}")
+        print(f"  Messages with [REDACTED]: {redacted_count}")
+        print(f"  Date range: {min_date} to {max_date}")
+
+        if args.scrubber_url:
+            import requests
+            response = requests.get(f"{args.scrubber_url}/health")
+            if response.status_code == 200:
+                data = response.json()
+                print(f"  Scrubber secrets loaded: {data['secrets_loaded']}")
+
+        cur.close()
+        conn.close()
+        return
+
+    # Test mode - verify scrubber works with a known secret
+    if args.test_secret:
+        if not args.scrubber_url:
+            parser.error("--test-secret requires --scrubber-url")
+        print(f"Testing scrubber with secret: {args.test_secret[:4]}...{args.test_secret[-2:]}")
+        if test_scrubber(args.scrubber_url, args.test_secret):
+            print("  ✓ Scrubber correctly redacted the test secret")
+        else:
+            print("  ✗ Scrubber did NOT redact the test secret!")
+            print("    This secret may not be in the scrubber's list")
+        return
 
     if not args.secrets_stdin and not args.scrubber_url:
         parser.error("Must specify either --secrets-stdin or --scrubber-url")
@@ -225,6 +301,12 @@ def main():
     else:
         print("*** DRY RUN: No changes will be made ***")
 
+    # Show pre-scan stats
+    conn = get_db_connection()
+    redacted_before = count_redacted(conn)
+    conn.close()
+    print(f"Messages already containing [REDACTED]: {redacted_before}")
+
     if args.secrets_stdin:
         secrets = load_secrets_from_stdin()
         print(f"Loaded {len(secrets)} secrets from stdin")
@@ -233,7 +315,7 @@ def main():
         load_secrets_from_scrubber(args.scrubber_url)  # Just to verify it's up
         findings = check_with_scrubber(args.scrubber_url, fix=args.fix)
 
-    print(f"\nFound {len(findings)} messages with secrets:")
+    print(f"\nFound {len(findings)} messages with unredacted secrets:")
     for finding in findings[:20]:  # Show first 20
         if len(finding) == 3:
             msg_id, secrets_found, preview = finding
@@ -247,6 +329,13 @@ def main():
 
     if findings and not args.fix:
         print("\nRun with --fix to redact these secrets")
+
+    # Show post-fix stats if we fixed anything
+    if args.fix and findings:
+        conn = get_db_connection()
+        redacted_after = count_redacted(conn)
+        conn.close()
+        print(f"\nMessages containing [REDACTED]: {redacted_before} -> {redacted_after}")
 
 
 if __name__ == '__main__':
