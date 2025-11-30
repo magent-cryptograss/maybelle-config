@@ -73,9 +73,8 @@ secrets = [v for v in data.values() if isinstance(v, str) and len(v) > 4]
 print(json.dumps(secrets))
 ")
 
-# Create scrubber secrets directory and copy secrets
-ssh "${USER}@${HOST}" "mkdir -p ${HETZNER_VOLUME_PATH}/scrubber-secrets && chmod 700 ${HETZNER_VOLUME_PATH}/scrubber-secrets"
-echo "$SECRETS_JSON" | ssh "${USER}@${HOST}" "cat > ${HETZNER_VOLUME_PATH}/scrubber-secrets/secrets.json && chmod 600 ${HETZNER_VOLUME_PATH}/scrubber-secrets/secrets.json"
+# Copy secrets to temp file on maybelle (will be moved into scrubber container by ansible)
+echo "$SECRETS_JSON" | ssh "${USER}@${HOST}" "cat > /tmp/scrubber-secrets.json && chmod 600 /tmp/scrubber-secrets.json"
 echo "Extracted $(echo "$SECRETS_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))') secrets for scrubber"
 
 echo ""

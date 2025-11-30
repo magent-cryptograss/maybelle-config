@@ -374,13 +374,16 @@
               environment:
                 - SECRETS_FILE=/app/secrets/secrets.json
               volumes:
-                - /mnt/persist/scrubber-secrets:/app/secrets:ro
+                - scrubber-secrets:/app/secrets
               networks:
                 - memory-lane-net
               restart: unless-stopped
               read_only: true
               security_opt:
                 - no-new-privileges:true
+
+          volumes:
+            scrubber-secrets:
 
           networks:
             memory-lane-net:
@@ -395,6 +398,30 @@
           - docker-compose.maybelle.yml
         build: always
         state: present
+
+    # Inject secrets into scrubber container (from temp file created by chapter-1.sh)
+    - name: Check if scrubber secrets temp file exists
+      stat:
+        path: /tmp/scrubber-secrets.json
+      register: scrubber_secrets_file
+
+    - name: Copy secrets into scrubber container
+      shell: docker cp /tmp/scrubber-secrets.json scrubber:/app/secrets/secrets.json
+      when: scrubber_secrets_file.stat.exists
+
+    - name: Fix secrets file ownership in container
+      shell: docker exec -u root scrubber chown scrubber:scrubber /app/secrets/secrets.json
+      when: scrubber_secrets_file.stat.exists
+
+    - name: Remove temp secrets file
+      file:
+        path: /tmp/scrubber-secrets.json
+        state: absent
+      when: scrubber_secrets_file.stat.exists
+
+    - name: Restart scrubber to load secrets
+      shell: docker restart scrubber
+      when: scrubber_secrets_file.stat.exists
 
     - name: Wait for postgres to be ready
       command: docker exec magenta-postgres pg_isready -U magent
