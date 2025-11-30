@@ -154,23 +154,25 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
     import requests
 
     conn = get_db_connection()
-    cur = conn.cursor()
+    read_cur = conn.cursor()
+    write_cur = conn.cursor() if fix else None
 
     findings = []
     fixed_count = 0
     batch_size = 100
 
     # Get message count
-    cur.execute("SELECT COUNT(*) FROM conversations_message")
-    total = cur.fetchone()[0]
+    read_cur.execute("SELECT COUNT(*) FROM conversations_message")
+    total = read_cur.fetchone()[0]
     print(f"Scanning {total} messages using scrubber API...")
 
-    # Process in batches
-    cur.execute("SELECT id, content FROM conversations_message ORDER BY id")
+    # Fetch all messages first to avoid cursor issues during updates
+    read_cur.execute("SELECT id, content FROM conversations_message ORDER BY id")
+    all_messages = read_cur.fetchall()
 
     batch = []  # (msg_id, content_as_json_str, original_content)
 
-    for msg_id, content in cur:
+    for msg_id, content in all_messages:
         if not content:
             continue
 
@@ -201,7 +203,7 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
                                 new_content = json.loads(scrub_str)
                             except json.JSONDecodeError:
                                 new_content = scrub_str
-                            cur.execute(
+                            write_cur.execute(
                                 "UPDATE conversations_message SET content = %s WHERE id = %s",
                                 (json.dumps(new_content), mid)
                             )
@@ -231,7 +233,7 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
                             new_content = json.loads(scrub_str)
                         except json.JSONDecodeError:
                             new_content = scrub_str
-                        cur.execute(
+                        write_cur.execute(
                             "UPDATE conversations_message SET content = %s WHERE id = %s",
                             (json.dumps(new_content), mid)
                         )
@@ -241,7 +243,9 @@ def check_with_scrubber(scrubber_url: str, fix: bool = False) -> List[Tuple[int,
         conn.commit()
         print(f"Fixed {fixed_count} messages")
 
-    cur.close()
+    read_cur.close()
+    if write_cur:
+        write_cur.close()
     conn.close()
 
     return findings
