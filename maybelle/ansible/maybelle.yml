@@ -113,7 +113,7 @@
         restart_policy: unless-stopped
         volumes:
           - "{{ jenkins_home }}:/var/jenkins_home"
-          - /var/run/docker.sock:/var/run/docker.sock
+          # Docker socket removed - Jenkins doesn't need it and it's a security risk
         env_file: "{{ jenkins_home }}/.env"
         env:
           CASC_JENKINS_CONFIG: "/var/jenkins_home/casc_configs/jenkins.yml"
@@ -297,6 +297,20 @@
       environment:
         GIT_TERMINAL_PROMPT: "0"
 
+    - name: Extract vault secrets for scrubbing
+      shell: |
+        ansible-vault view ../../secrets/vault.yml | python3 -c "
+        import sys, yaml, json
+        data = yaml.safe_load(sys.stdin)
+        secrets = [v for v in data.values() if isinstance(v, str) and len(v) > 4]
+        print(json.dumps(secrets))
+        "
+      args:
+        chdir: "{{ playbook_dir }}"
+      environment:
+        ANSIBLE_VAULT_PASSWORD_FILE: "{{ lookup('env', 'ANSIBLE_VAULT_PASSWORD_FILE') }}"
+      register: scrub_secrets_json
+
     - name: Create Memory Lane .env file
       copy:
         dest: /mnt/persist/magenta/source/.env
@@ -309,6 +323,7 @@
           DJANGO_ALLOWED_HOSTS=memory-lane.maybelle.cryptograss.live,localhost,10.0.0.2
           DJANGO_DEBUG=False
           INGEST_API_KEY={{ ingest_api_key }}
+          SCRUB_SECRETS={{ scrub_secrets_json.stdout | trim }}
         mode: '0600'
 
     - name: Create docker network for memory lane
