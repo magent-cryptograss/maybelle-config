@@ -297,20 +297,6 @@
       environment:
         GIT_TERMINAL_PROMPT: "0"
 
-    - name: Extract vault secrets for scrubbing
-      shell: |
-        ansible-vault view ../../secrets/vault.yml | python3 -c "
-        import sys, yaml, json
-        data = yaml.safe_load(sys.stdin)
-        secrets = [v for v in data.values() if isinstance(v, str) and len(v) > 4]
-        print(json.dumps(secrets))
-        "
-      args:
-        chdir: "{{ playbook_dir }}"
-      environment:
-        ANSIBLE_VAULT_PASSWORD_FILE: "{{ lookup('env', 'ANSIBLE_VAULT_PASSWORD_FILE') }}"
-      register: scrub_secrets_json
-
     - name: Create Memory Lane .env file
       copy:
         dest: /mnt/persist/magenta/source/.env
@@ -323,7 +309,7 @@
           DJANGO_ALLOWED_HOSTS=memory-lane.maybelle.cryptograss.live,localhost,10.0.0.2
           DJANGO_DEBUG=False
           INGEST_API_KEY={{ ingest_api_key }}
-          SCRUB_SECRETS={{ scrub_secrets_json.stdout | trim }}
+          SCRUBBER_URL=http://scrubber:8001
         mode: '0600'
 
     - name: Create docker network for memory lane
@@ -379,6 +365,22 @@
               stdin_open: true
               tty: true
               command: python manage.py run_mcp_server_v2 --port 8000
+
+            scrubber:
+              build:
+                context: ./scrubber
+                dockerfile: Dockerfile
+              container_name: scrubber
+              environment:
+                - SECRETS_FILE=/app/secrets/secrets.json
+              volumes:
+                - /mnt/persist/scrubber-secrets:/app/secrets:ro
+              networks:
+                - memory-lane-net
+              restart: unless-stopped
+              read_only: true
+              security_opt:
+                - no-new-privileges:true
 
           networks:
             memory-lane-net:

@@ -55,13 +55,28 @@ if [ ! -f "$ANSIBLE_VAULT_PASSWORD_FILE" ]; then
     exit 1
 fi
 
-# Mount volume if needed (before copying vault password)
+# Mount volume if needed (before copying files)
 echo "Ensuring volume is mounted..."
 ssh "${USER}@${HOST}" "mkdir -p ${HETZNER_VOLUME_PATH} && (mountpoint -q ${HETZNER_VOLUME_PATH} || mount ${VOLUME_DEVICE} ${HETZNER_VOLUME_PATH})"
 
 echo "Copying vault password to maybelle..."
 scp "$ANSIBLE_VAULT_PASSWORD_FILE" "${USER}@${HOST}:${HETZNER_VOLUME_PATH}/.vault-password"
 ssh "${USER}@${HOST}" "chmod 600 ${HETZNER_VOLUME_PATH}/.vault-password"
+
+# Extract secrets locally and copy only the JSON list to maybelle
+# This keeps the vault password off maybelle for the scrubber
+echo "Extracting secrets for scrubber..."
+SECRETS_JSON=$(ansible-vault view "${SCRIPT_DIR}/../../secrets/vault.yml" --vault-password-file "$ANSIBLE_VAULT_PASSWORD_FILE" | python3 -c "
+import sys, yaml, json
+data = yaml.safe_load(sys.stdin)
+secrets = [v for v in data.values() if isinstance(v, str) and len(v) > 4]
+print(json.dumps(secrets))
+")
+
+# Create scrubber secrets directory and copy secrets
+ssh "${USER}@${HOST}" "mkdir -p ${HETZNER_VOLUME_PATH}/scrubber-secrets && chmod 700 ${HETZNER_VOLUME_PATH}/scrubber-secrets"
+echo "$SECRETS_JSON" | ssh "${USER}@${HOST}" "cat > ${HETZNER_VOLUME_PATH}/scrubber-secrets/secrets.json && chmod 600 ${HETZNER_VOLUME_PATH}/scrubber-secrets/secrets.json"
+echo "Extracted $(echo "$SECRETS_JSON" | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))') secrets for scrubber"
 
 echo ""
 echo "Connecting via mosh..."
