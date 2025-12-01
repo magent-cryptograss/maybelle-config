@@ -506,10 +506,14 @@
         mode: '0750'
         content: |
           #!/bin/bash
-          # Daily postgres backup with 7-day retention
+          # Bi-hourly postgres backup
           # Uses pg_dump custom format (-Fc) for reliable cross-server restores
           # Backups named by Ethereum block height for temporal anchoring
           BACKUP_DIR="/mnt/persist/magenta/backups"
+          DAILY_DIR="$BACKUP_DIR/daily"
+
+          # Ensure daily directory exists
+          mkdir -p "$DAILY_DIR"
 
           # Get current Ethereum block height
           BLOCK_HEIGHT=$(curl -s https://eth.blockscout.com/api/v2/stats | jq -r .total_blocks)
@@ -527,16 +531,30 @@
           # Log
           echo "$(date): Backup created: $BACKUP_FILE ($(stat -c%s "$BACKUP_FILE") bytes)" >> "$BACKUP_DIR/backup.log"
 
-          # Cleanup old backups (keep last 7 days)
-          find "$BACKUP_DIR" -name "magenta_memory_*.dump" -mtime +7 -delete
-          find "$BACKUP_DIR" -name "magenta_memory_*.sql.gz" -mtime +7 -delete
+          # Keep one daily backup (copy the 3am backup to daily folder)
+          HOUR=$(date +%H)
+          if [ "$HOUR" = "03" ]; then
+              cp "$BACKUP_FILE" "$DAILY_DIR/"
+              echo "$(date): Daily backup saved to $DAILY_DIR" >> "$BACKUP_DIR/backup.log"
+              # Keep daily backups for 30 days
+              find "$DAILY_DIR" -name "magenta_memory_*.dump" -mtime +30 -delete
+          fi
 
-    - name: Schedule daily postgres backup
+          # Cleanup bi-hourly backups (keep last 2 days)
+          find "$BACKUP_DIR" -maxdepth 1 -name "magenta_memory_*.dump" -mtime +2 -delete
+          find "$BACKUP_DIR" -maxdepth 1 -name "magenta_memory_*.sql.gz" -mtime +2 -delete
+
+    - name: Schedule bi-hourly postgres backup
       ansible.builtin.cron:
-        name: "postgres daily backup"
-        hour: "3"
+        name: "postgres bi-hourly backup"
+        hour: "*/2"
         minute: "0"
         job: "/mnt/persist/magenta/backup-postgres.sh"
+
+    - name: Remove old daily backup cron if exists
+      ansible.builtin.cron:
+        name: "postgres daily backup"
+        state: absent
 
     # Security: remove vault password after deploy completes
     # The encrypted vault.yml is in a public repo, so vault password on disk is a risk

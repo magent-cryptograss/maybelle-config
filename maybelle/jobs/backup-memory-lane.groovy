@@ -38,9 +38,10 @@ pipelineJob('backup-memory-lane') {
                                     echo "Age: \\$LATEST_AGE_HOURS hours"
                                     echo ""
 
-                                    # Warn if backup is too old (> 25 hours)
-                                    if [ \\$LATEST_AGE_HOURS -gt 25 ]; then
-                                        echo "WARNING: Latest backup is more than 25 hours old!"
+                                    # Warn if backup is too old (> 3 hours for bi-hourly backups)
+                                    if [ \\$LATEST_AGE_HOURS -gt 3 ]; then
+                                        echo "WARNING: Latest backup is more than 3 hours old!"
+                                        exit 1
                                     else
                                         echo "OK: Backup is recent"
                                     fi
@@ -95,6 +96,6 @@ pipelineJob('backup-memory-lane') {
         }
     }
     triggers {
-        cron('30 3 * * *')  // Run daily at 3:30am (after cron backup at 3am)
+        cron('30 */2 * * *')  // Run every 2 hours at :30 (after bi-hourly backup at :00)
     }
 }
