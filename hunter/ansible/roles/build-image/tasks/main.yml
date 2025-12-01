@@ -25,6 +25,19 @@
   args:
     chdir: "{{ base_dir }}/memory-lane-source"
 
+- name: Clone or update magenta repository (for shared CLAUDE.md)
+  git:
+    repo: https://github.com/magent-cryptograss/magenta.git
+    dest: "{{ base_dir }}/magenta-source"
+    version: main
+    force: yes
+    update: yes
+
+- name: Force fetch latest magenta changes from main branch
+  shell: git fetch origin main && git reset --hard origin/main
+  args:
+    chdir: "{{ base_dir }}/magenta-source"
+
 - name: Get docker group GID from host
   shell: "getent group docker | cut -d: -f3"
   register: docker_gid
