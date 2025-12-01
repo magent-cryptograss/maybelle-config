@@ -10,8 +10,8 @@
 #   echo "$ANSIBLE_VAULT_PASSWORD" | ssh root@maybelle.cryptograss.live /mnt/persist/maybelle-config/maybelle/scripts/deploy-hunter.sh [username] [--fresh-host]
 #
 
-set -e
 set -o pipefail
+# Note: NOT using 'set -e' because we want to handle errors explicitly
 
 DEPLOY_USER="${1:-remote}"
 FRESH_HOST=false
