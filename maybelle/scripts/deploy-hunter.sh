@@ -111,11 +111,17 @@ echo ""
 
 START_TIME=$(date +%s)
 
-# Set environment for ansible
-export ANSIBLE_HOST_KEY_CHECKING=False
-
 cd "$REPO_DIR/hunter/ansible"
-if ansible-playbook --vault-password-file="$VAULT_FILE" -i inventory.yml playbook.yml 2>&1 | tee "$LOG_FILE"; then
+
+# Build ansible command
+ANSIBLE_CMD="ansible-playbook --vault-password-file=\"$VAULT_FILE\" -i inventory.yml playbook.yml"
+
+# For fresh hosts, add SSH options to skip host key checking
+if [ "$FRESH_HOST" = true ]; then
+    ANSIBLE_CMD="$ANSIBLE_CMD --ssh-common-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'"
+fi
+
+if bash -c "$ANSIBLE_CMD" 2>&1 | tee "$LOG_FILE"; then
     DEPLOY_STATUS="success"
     EXIT_CODE=0
     echo ""
