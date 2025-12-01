@@ -616,6 +616,36 @@
         name: "postgres daily backup"
         state: absent
 
+    - name: Create offsite backup script
+      copy:
+        dest: /usr/local/bin/backup-to-nfs.sh
+        mode: '0750'
+        content: |
+          #!/bin/bash
+          # Sync daily backups to NearlyFreeSpeech for offsite storage
+          LOG_FILE="/var/log/nfs-backup.log"
+          BACKUP_DIR="/mnt/persist/magenta/backups/daily"
+          NFS_TARGET="jmyles_justinholmescom@ssh.nyc1.nearlyfreespeech.net:/home/private/backups/"
+
+          echo "$(date): Starting offsite backup sync" >> "$LOG_FILE"
+
+          if rsync -avz --delete \
+              -e "ssh -i /root/.ssh/id_ed25519_nfs -o StrictHostKeyChecking=no" \
+              "$BACKUP_DIR"/ \
+              "$NFS_TARGET" >> "$LOG_FILE" 2>&1; then
+              echo "$(date): Offsite backup sync successful" >> "$LOG_FILE"
+          else
+              echo "$(date): Offsite backup sync FAILED" >> "$LOG_FILE"
+              exit 1
+          fi
+
+    - name: Schedule daily offsite backup sync
+      ansible.builtin.cron:
+        name: "offsite backup to nfs"
+        hour: "4"
+        minute: "0"
+        job: "/usr/local/bin/backup-to-nfs.sh"
+
     # Security: remove vault password after deploy completes
     # The encrypted vault.yml is in a public repo, so vault password on disk is a risk
     # Re-run chapter-1.sh to restore it if needed for future deploys
