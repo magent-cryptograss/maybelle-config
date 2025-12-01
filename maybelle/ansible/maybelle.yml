@@ -132,6 +132,7 @@
           CASC_JENKINS_CONFIG: "/var/jenkins_home/casc_configs/jenkins.yml"
           JENKINS_ADMIN_ID: admin
           JENKINS_ADMIN_PASSWORD: "{{ jenkins_admin_password }}"
+          JENKINS_REPORTER_PASSWORD: "{{ jenkins_reporter_password }}"
           GITHUB_TOKEN: "{{ maybelle_github_token }}"
           GITHUB_REPO_URL: "{{ github_repo_url }}"
         ports:

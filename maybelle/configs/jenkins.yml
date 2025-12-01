@@ -10,6 +10,8 @@ jenkins:
       users:
         - id: admin
           password: ${JENKINS_ADMIN_PASSWORD}
+        - id: reporter
+          password: ${JENKINS_REPORTER_PASSWORD}
 
   authorizationStrategy:
     globalMatrix:
@@ -18,6 +20,12 @@ jenkins:
           name: "admin"
           permissions:
           - "Overall/Administer"
+      - user:
+          name: "reporter"
+          permissions:
+          - "Job/Build"
+          - "Job/Read"
+          - "Overall/Read"
       - user:
           name: "anonymous"
           permissions:

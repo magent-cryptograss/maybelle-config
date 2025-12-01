@@ -19,6 +19,7 @@ import os
 import time
 import urllib.request
 import urllib.parse
+import base64
 import getpass
 
 
@@ -38,8 +39,21 @@ def run_ssh(host, command, capture_output=False, check=True, allocate_tty=False)
     return result
 
 
+def get_jenkins_credentials():
+    """Get Jenkins reporter credentials from environment"""
+    password = os.environ.get('JENKINS_REPORTER_PASSWORD')
+    if not password:
+        return None
+    return ('reporter', password)
+
+
 def report_to_jenkins(user, status, duration, log_output):
     """Report deployment result to Jenkins for logging"""
+    creds = get_jenkins_credentials()
+    if not creds:
+        print("⚠ JENKINS_REPORTER_PASSWORD not set, skipping Jenkins report")
+        return
+
     try:
         jenkins_url = "http://maybelle.cryptograss.live:8080/job/deploy-hunter/buildWithParameters"
 
@@ -52,6 +66,11 @@ def report_to_jenkins(user, status, duration, log_output):
 
         data = urllib.parse.urlencode(params).encode('utf-8')
         req = urllib.request.Request(jenkins_url, data=data, method='POST')
+
+        # Add Basic Auth header
+        auth_string = f"{creds[0]}:{creds[1]}"
+        auth_bytes = base64.b64encode(auth_string.encode('utf-8')).decode('utf-8')
+        req.add_header('Authorization', f'Basic {auth_bytes}')
 
         urllib.request.urlopen(req, timeout=10)
         print("✓ Reported to Jenkins")
