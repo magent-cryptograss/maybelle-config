@@ -16,7 +16,8 @@ DEPLOY_USER="${1:-remote}"
 FRESH_HOST=false
 REPO_DIR="/mnt/persist/maybelle-config"
 JENKINS_REPORTER_FILE="/root/.jenkins_reporter_password"
-LOG_FILE="/tmp/hunter-deploy-$$.log"
+TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+LOG_FILE="/mnt/persist/logs/hunter-deploy-${TIMESTAMP}.log"
 VAULT_FILE="/tmp/vault_pass_$$"
 HUNTER_HOST="hunter.cryptograss.live"
 
@@ -51,9 +52,12 @@ echo "$VAULT_PASSWORD" > "$VAULT_FILE"
 chmod 600 "$VAULT_FILE"
 echo "✓ Vault password received"
 
-# Cleanup function
+# Ensure log directory exists
+mkdir -p /mnt/persist/logs
+
+# Cleanup function (keep logs, only remove vault file)
 cleanup() {
-    rm -f "$VAULT_FILE" "$LOG_FILE"
+    rm -f "$VAULT_FILE"
 }
 trap cleanup EXIT
 
@@ -178,6 +182,8 @@ if [ -n "$REPORTER_PASS" ]; then
     rm -f "$COOKIE_JAR"
 fi
 
+echo ""
+echo "Full deployment log saved to: $LOG_FILE"
 echo ""
 if [ $EXIT_CODE -eq 0 ]; then
     echo "✓ SUCCESS"
