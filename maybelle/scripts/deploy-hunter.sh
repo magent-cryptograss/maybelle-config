@@ -7,19 +7,32 @@
 # The Jenkins reporter password is read from /root/.jenkins_reporter_password
 #
 # Usage from laptop:
-#   echo "$ANSIBLE_VAULT_PASSWORD" | ssh root@maybelle.cryptograss.live /mnt/persist/maybelle-config/maybelle/scripts/deploy-hunter.sh [username]
+#   echo "$ANSIBLE_VAULT_PASSWORD" | ssh root@maybelle.cryptograss.live /mnt/persist/maybelle-config/maybelle/scripts/deploy-hunter.sh [username] [--fresh-host]
 #
 
 set -e
 
 DEPLOY_USER="${1:-remote}"
+FRESH_HOST=false
 REPO_DIR="/mnt/persist/maybelle-config"
 JENKINS_REPORTER_FILE="/root/.jenkins_reporter_password"
 LOG_FILE="/tmp/hunter-deploy-$$.log"
 VAULT_FILE="/tmp/vault_pass_$$"
+HUNTER_HOST="hunter.cryptograss.live"
+
+# Parse arguments
+if [ "$2" = "--fresh-host" ] || [ "$1" = "--fresh-host" ]; then
+    FRESH_HOST=true
+    if [ "$1" = "--fresh-host" ]; then
+        DEPLOY_USER="remote"
+    fi
+fi
 
 echo "============================================================"
 echo "DEPLOY HUNTER FROM MAYBELLE"
+if [ "$FRESH_HOST" = true ]; then
+    echo "(FRESH HOST - will reset SSH keys)"
+fi
 echo "============================================================"
 echo ""
 echo "Deploy user: $DEPLOY_USER"
@@ -73,6 +86,22 @@ if ! git merge-base --is-ancestor origin/main origin/production; then
 fi
 echo "✓ Repository updated"
 
+# Handle fresh host SSH keys
+if [ "$FRESH_HOST" = true ]; then
+    echo ""
+    echo "============================================================"
+    echo "HANDLING FRESH HOST SSH KEYS"
+    echo "============================================================"
+    echo ""
+
+    echo "Removing old SSH host keys for $HUNTER_HOST..."
+    ssh-keygen -R "$HUNTER_HOST" 2>/dev/null || true
+    echo "✓ Old host keys removed"
+
+    echo ""
+    echo "Note: Ansible will accept new host keys automatically"
+fi
+
 # Run ansible
 echo ""
 echo "============================================================"
@@ -81,6 +110,9 @@ echo "============================================================"
 echo ""
 
 START_TIME=$(date +%s)
+
+# Set environment for ansible
+export ANSIBLE_HOST_KEY_CHECKING=False
 
 cd "$REPO_DIR/hunter/ansible"
 if ansible-playbook --vault-password-file="$VAULT_FILE" -i inventory.yml playbook.yml 2>&1 | tee "$LOG_FILE"; then

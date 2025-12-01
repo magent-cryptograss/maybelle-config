@@ -7,6 +7,10 @@ This script:
 2. SSHs to maybelle and runs the deploy script there
 3. The deploy script on maybelle handles ansible + Jenkins reporting
 
+Usage:
+    ./deploy-hunter-remote.py           # Normal deploy
+    ./deploy-hunter-remote.py --fresh-host  # Fresh hunter rebuild (resets SSH keys)
+
 Prerequisites:
 - SSH access to maybelle from your laptop
 - Vault password in ANSIBLE_VAULT_PASSWORD or ANSIBLE_VAULT_PASSWORD_FILE
@@ -36,8 +40,13 @@ def get_vault_password():
 
 
 def main():
+    # Parse arguments
+    fresh_host = '--fresh-host' in sys.argv
+
     print("=" * 60)
     print("DEPLOY HUNTER VIA MAYBELLE")
+    if fresh_host:
+        print("(FRESH HOST - will reset SSH keys)")
     print("=" * 60)
     print()
 
@@ -55,6 +64,8 @@ def main():
     # Confirm
     print("\n" + "-" * 60)
     print("Will deploy hunter (user containers + watcher)")
+    if fresh_host:
+        print("⚠  FRESH HOST MODE: Old SSH host keys will be removed")
     print("-" * 60)
 
     confirm = input("\nContinue? (y/n): ").strip().lower()
@@ -72,8 +83,13 @@ def main():
     maybelle = 'root@maybelle.cryptograss.live'
     deploy_script = '/mnt/persist/maybelle-config/maybelle/scripts/deploy-hunter.sh'
 
+    # Pass --fresh-host flag to the remote script
+    script_args = f'{deploy_script} {local_user}'
+    if fresh_host:
+        script_args += ' --fresh-host'
+
     result = subprocess.run(
-        ['ssh', '-t', maybelle, f'{deploy_script} {local_user}'],
+        ['ssh', '-t', maybelle, script_args],
         input=vault_password + '\n',
         text=True
     )
