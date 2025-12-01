@@ -3,7 +3,7 @@
 
 - name: restart sshd
   systemd:
-    name: sshd
+    name: ssh  # Ubuntu uses 'ssh' not 'sshd'
     state: restarted
 
 - name: restart fail2ban
