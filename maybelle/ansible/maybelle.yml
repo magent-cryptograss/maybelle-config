@@ -219,10 +219,55 @@
         group: 1000
         mode: '0644'
 
-    - name: Cronjob to rsync production builds to web servers
+    - name: Create production deploy script
+      copy:
+        dest: /usr/local/bin/deploy-to-nfs.sh
+        mode: '0750'
+        content: |
+          #!/bin/bash
+          # Deploy production builds to NearlyFreeSpeech
+          # Only deploys if Jenkins has marked a successful build
+
+          MARKER_FILE="/var/jenkins_home/www/builds/production/.deploy-ready"
+          BUILD_DIR="/var/jenkins_home/www/builds/production"
+          LOG_FILE="/var/log/nfs-deploy.log"
+          SSH_KEY="/root/.ssh/id_ed25519"
+          NFS_TARGET="jmyles_justinholmescom@ssh.nyc1.nearlyfreespeech.net:"
+
+          # Check if marker exists
+          if [ ! -f "$MARKER_FILE" ]; then
+              exit 0  # No deploy needed, exit silently
+          fi
+
+          # Get build info from marker
+          BUILD_INFO=$(cat "$MARKER_FILE")
+
+          echo "$(date): Starting deploy - $BUILD_INFO" >> "$LOG_FILE"
+
+          # Perform the rsync
+          if rsync -vah --delete \
+              -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
+              "$BUILD_DIR"/* \
+              "$NFS_TARGET" >> "$LOG_FILE" 2>&1; then
+
+              # Success - remove marker and log
+              rm -f "$MARKER_FILE"
+              echo "$(date): Deploy successful" >> "$LOG_FILE"
+          else
+              echo "$(date): Deploy FAILED" >> "$LOG_FILE"
+              exit 1
+          fi
+
+    - name: Cronjob to deploy production builds to NFS
+      ansible.builtin.cron:
+        name: "deploy to nfs"
+        job: "/usr/local/bin/deploy-to-nfs.sh"
+        minute: "*/2"
+
+    - name: Remove old rsync cron if exists
       ansible.builtin.cron:
         name: "push sites to prod"
-        job: "rsync -vah --progress --delete /var/jenkins_home/www/builds/production/* jmyles_justinholmescom@ssh.nyc1.nearlyfreespeech.net: >> ~/sites-rsync.log 2>&1"
+        state: absent
 
     - name: Create Jenkins job definitions directory
       file:
