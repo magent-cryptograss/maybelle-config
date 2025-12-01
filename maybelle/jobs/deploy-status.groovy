@@ -43,11 +43,28 @@ pipelineJob('deploy-status') {
                                         LAST_SUCCESS=\\$(grep "Deploy successful" "\\$DEPLOY_LOG" | tail -1)
                                         if [ -n "\\$LAST_SUCCESS" ]; then
                                             echo "\\$LAST_SUCCESS"
+
+                                            # Check age of last successful deploy
+                                            # Extract timestamp from log line (format: "Mon Dec  1 04:00:10 UTC 2025: Deploy successful")
+                                            LAST_TIME=\\$(echo "\\$LAST_SUCCESS" | sed 's/: Deploy successful//')
+                                            LAST_EPOCH=\\$(date -d "\\$LAST_TIME" +%s 2>/dev/null || echo 0)
+                                            NOW_EPOCH=\\$(date +%s)
+                                            AGE_MINUTES=\\$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
+
+                                            echo "Age: \\$AGE_MINUTES minutes"
+
+                                            if [ "\\$AGE_MINUTES" -gt 10 ]; then
+                                                echo ""
+                                                echo "ERROR: Last successful deploy was more than 10 minutes ago!"
+                                                exit 1
+                                            fi
                                         else
                                             echo "(no successful deploys in log)"
+                                            echo "ERROR: No successful deploys found!"
+                                            exit 1
                                         fi
                                     else
-                                        echo "(no deploy log found)"
+                                        echo "(no deploy log found - may be first run after setup)"
                                     fi
                                 """
                             }
