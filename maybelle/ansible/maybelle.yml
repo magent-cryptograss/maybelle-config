@@ -132,11 +132,21 @@
       include_role:
         name: caddy
 
-    - name: Generate SSH key for root
-      openssh_keypair:
-        path: "~/.ssh/id_ed25519"
-        type: ed25519
-        state: present
+    - name: Create .ssh directory for root
+      file:
+        path: "/root/.ssh"
+        state: directory
+        mode: '0700'
+        owner: root
+        group: root
+
+    - name: Deploy NFS SSH key from vault
+      copy:
+        content: "{{ nfs_ssh_key | b64decode }}"
+        dest: "/root/.ssh/id_ed25519_nfs"
+        mode: '0600'
+        owner: root
+        group: root
 
     - name: Create .ssh directory for jenkins user
       file:
@@ -171,13 +181,17 @@
         owner: root
         group: root
 
-    - name: Configure SSH to use hunter key
+    - name: Configure SSH for hunter and NFS
       copy:
         dest: "/root/.ssh/config"
         content: |
           Host hunter.cryptograss.live
             IdentityFile ~/.ssh/id_ed25519_hunter
             User root
+
+          Host ssh.nyc1.nearlyfreespeech.net
+            IdentityFile ~/.ssh/id_ed25519_nfs
+            User jmyles_justinholmescom
         mode: '0600'
         owner: root
         group: root
@@ -231,7 +245,7 @@
           MARKER_FILE="/var/jenkins_home/www/builds/production/.deploy-ready"
           BUILD_DIR="/var/jenkins_home/www/builds/production"
           LOG_FILE="/var/log/nfs-deploy.log"
-          SSH_KEY="/root/.ssh/id_ed25519"
+          SSH_KEY="/root/.ssh/id_ed25519_nfs"
           NFS_TARGET="jmyles_justinholmescom@ssh.nyc1.nearlyfreespeech.net:"
 
           # Check if marker exists
