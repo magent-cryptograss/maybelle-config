@@ -70,7 +70,7 @@ def main():
     print()
 
     maybelle = 'root@maybelle.cryptograss.live'
-    deploy_script = '/root/maybelle-config/maybelle/scripts/deploy-hunter.sh'
+    deploy_script = '/mnt/persist/maybelle-config/maybelle/scripts/deploy-hunter.sh'
 
     result = subprocess.run(
         ['ssh', '-t', maybelle, f'{deploy_script} {local_user}'],

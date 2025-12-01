@@ -7,13 +7,13 @@
 # The Jenkins reporter password is read from /root/.jenkins_reporter_password
 #
 # Usage from laptop:
-#   echo "$ANSIBLE_VAULT_PASSWORD" | ssh root@maybelle.cryptograss.live /root/maybelle-config/maybelle/scripts/deploy-hunter.sh [username]
+#   echo "$ANSIBLE_VAULT_PASSWORD" | ssh root@maybelle.cryptograss.live /mnt/persist/maybelle-config/maybelle/scripts/deploy-hunter.sh [username]
 #
 
 set -e
 
 DEPLOY_USER="${1:-remote}"
-REPO_DIR="/root/maybelle-config"
+REPO_DIR="/mnt/persist/maybelle-config"
 JENKINS_REPORTER_FILE="/root/.jenkins_reporter_password"
 LOG_FILE="/tmp/hunter-deploy-$$.log"
 VAULT_FILE="/tmp/vault_pass_$$"
