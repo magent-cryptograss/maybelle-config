@@ -104,7 +104,9 @@ if [ "$FRESH_HOST" = true ]; then
     echo "✓ Old host keys removed"
 
     echo ""
-    echo "Note: Ansible will accept new host keys automatically"
+    echo "Fetching new SSH host key..."
+    ssh-keyscan -H "$HUNTER_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+    echo "✓ New host key added to known_hosts"
 fi
 
 # Run ansible
@@ -118,13 +120,8 @@ START_TIME=$(date +%s)
 
 cd "$REPO_DIR/hunter/ansible"
 
-# Build ansible command
+# Run ansible playbook
 ANSIBLE_CMD="ansible-playbook --vault-password-file=\"$VAULT_FILE\" -i inventory.yml playbook.yml"
-
-# For fresh hosts, add SSH options to skip host key checking
-if [ "$FRESH_HOST" = true ]; then
-    ANSIBLE_CMD="$ANSIBLE_CMD --ssh-common-args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'"
-fi
 
 if bash -c "$ANSIBLE_CMD" 2>&1 | tee "$LOG_FILE"; then
     DEPLOY_STATUS="success"
