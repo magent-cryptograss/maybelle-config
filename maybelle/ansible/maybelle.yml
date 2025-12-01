@@ -36,6 +36,7 @@
           - docker-compose-v2
           - docker-buildx
           - ansible
+          - jq
         state: present
         update_cache: yes
 
