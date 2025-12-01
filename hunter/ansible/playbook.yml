@@ -43,6 +43,12 @@
       include_role:
         name: services
 
+    - name: Create magenta-net docker network
+      command: docker network create magenta-net
+      register: network_create
+      failed_when: network_create.rc != 0 and 'already exists' not in network_create.stderr
+      changed_when: network_create.rc == 0
+
     - name: Include user-instance role for each user
       include_role:
         name: user-instance
