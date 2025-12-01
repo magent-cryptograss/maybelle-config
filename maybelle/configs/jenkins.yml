@@ -39,8 +39,8 @@ jobs:
   - file: /var/jenkins_home/jobs/pull-requests.groovy
   - file: /var/jenkins_home/jobs/fetch-chain-data.groovy
   - file: /var/jenkins_home/jobs/deploy-hunter.groovy
-  - file: /var/jenkins_home/jobs/backup-hunter-db.groovy
-  - file: /var/jenkins_home/jobs/backup-hunter-db-manual.groovy
+  - file: /var/jenkins_home/jobs/backup-memory-lane.groovy
+  - file: /var/jenkins_home/jobs/backup-memory-lane-manual.groovy
 
 credentials:
   system:
