@@ -69,9 +69,12 @@
     group: 1000
     mode: '0600'
 
-- name: Create git config for user
+- name: Create git config for user (in persistent home directory)
   copy:
-    dest: "{{ base_dir }}/{{ user.name }}/.gitconfig"
+    dest: "{{ base_dir }}/{{ user.name }}/home/.gitconfig"
+    owner: 1000
+    group: 1000
+    mode: '0644'
     content: |
       [user]
         name = {{ user.full_name }}

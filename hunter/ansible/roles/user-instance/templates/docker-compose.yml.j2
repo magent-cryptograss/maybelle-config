@@ -17,9 +17,8 @@ services:
     volumes:
       # Mount entire home directory to persist workspace, .claude, bash history, etc
       - {{ base_dir }}/{{ user.name }}/home:/home/magent
-      # SSH keys and git config mounted separately (read-only for security)
+      # SSH keys mounted separately (read-only for security)
       - {{ base_dir }}/{{ user.name }}/.ssh:/home/magent/.ssh:ro
-      - {{ base_dir }}/{{ user.name }}/.gitconfig:/home/magent/.gitconfig:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - magenta-net
