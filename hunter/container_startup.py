@@ -132,6 +132,33 @@ def setup_workspace():
     )
 
 
+def setup_host_files():
+    """Copy host-mounted files into place (for local dev)."""
+    logger.info("=== Setting up host-mounted files ===")
+
+    # SSH authorized_keys (mounted to /tmp to avoid volume conflicts)
+    host_keys = Path("/tmp/host_authorized_keys")
+    if host_keys.exists():
+        ssh_dir = Path("/home/magent/.ssh")
+        ssh_dir.mkdir(parents=True, exist_ok=True)
+        auth_keys = ssh_dir / "authorized_keys"
+        if not auth_keys.exists():
+            auth_keys.write_text(host_keys.read_text())
+            run_command("chown -R magent:magent /home/magent/.ssh")
+            run_command("chmod 700 /home/magent/.ssh")
+            run_command("chmod 600 /home/magent/.ssh/authorized_keys")
+            logger.info("✓ Copied SSH authorized_keys from host")
+
+    # Git config (mounted to /tmp to avoid volume conflicts)
+    host_gitconfig = Path("/tmp/host_gitconfig")
+    if host_gitconfig.exists():
+        gitconfig = Path("/home/magent/.gitconfig")
+        if not gitconfig.exists():
+            gitconfig.write_text(host_gitconfig.read_text())
+            run_command("chown magent:magent /home/magent/.gitconfig")
+            logger.info("✓ Copied .gitconfig from host")
+
+
 def setup_claude_config():
     """Set up CLAUDE.md in home directory and ensure .claude directory exists."""
     logger.info("=== Setting up Claude configuration ===")
@@ -314,6 +341,7 @@ def main():
     logger.info("=" * 60)
 
     try:
+        setup_host_files()
         setup_workspace()
         setup_claude_config()
         setup_environment_variables()

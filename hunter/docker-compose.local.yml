@@ -18,8 +18,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - magent-home:/home/magent
-      - ~/.ssh/id_ed25519.pub:/home/magent/.ssh/authorized_keys:ro
-      - ~/.gitconfig:/home/magent/.gitconfig:ro
+      - ~/.ssh/id_ed25519.pub:/tmp/host_authorized_keys:ro
+      - ~/.gitconfig:/tmp/host_gitconfig:ro
     environment:
       - GH_TOKEN=${GH_TOKEN}
       # Connect to hunter postgres via SSH tunnel
