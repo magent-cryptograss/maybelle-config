@@ -123,6 +123,14 @@ def setup_workspace():
         run_install=False
     )
 
+    # Clone maybelle-config (infrastructure and deployment configs)
+    ensure_repo_cloned(
+        "https://github.com/cryptograss/maybelle-config.git",
+        workspace / "maybelle-config",
+        user='magent',
+        run_install=False
+    )
+
 
 def setup_claude_config():
     """Set up CLAUDE.md in home directory and ensure .claude directory exists."""

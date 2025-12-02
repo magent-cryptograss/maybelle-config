@@ -25,6 +25,7 @@ all:
         ssh_port: 2222
         port_range_start: 14000  # 14000-14009
         code_server_password: "{{ justin_vscode_password }}"
+        github_token: "{{ justin_github_token }}"
 
       - name: rj
         full_name: "R.J. Partington III"
@@ -34,6 +35,7 @@ all:
         ssh_port: 2223
         port_range_start: 14010
         code_server_password: "{{ rj_vscode_password }}"
+        github_token: "{{ rj_github_token | default('') }}"
 
       - name: skyler
         full_name: "Skyler Golden"
@@ -43,3 +45,4 @@ all:
         ssh_port: 2224
         port_range_start: 14020
         code_server_password: "{{ skyler_vscode_password | default('change-me-skyler') }}"
+        github_token: "{{ skyler_github_token | default('') }}"
