@@ -18,7 +18,7 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - magent-home:/home/magent
-      - ~/.ssh/id_ed25519.pub:/tmp/host_authorized_keys:ro
+      - ~/.ssh:/tmp/host_ssh:ro
       - ~/.gitconfig:/tmp/host_gitconfig:ro
     environment:
       - GH_TOKEN=${GH_TOKEN}

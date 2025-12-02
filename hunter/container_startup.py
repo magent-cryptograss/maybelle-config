@@ -136,18 +136,22 @@ def setup_host_files():
     """Copy host-mounted files into place (for local dev)."""
     logger.info("=== Setting up host-mounted files ===")
 
-    # SSH authorized_keys (mounted to /tmp to avoid volume conflicts)
-    host_keys = Path("/tmp/host_authorized_keys")
-    if host_keys.exists():
+    # SSH authorized_keys (host .ssh dir mounted to /tmp/host_ssh)
+    host_ssh = Path("/tmp/host_ssh")
+    if host_ssh.exists() and host_ssh.is_dir():
         ssh_dir = Path("/home/magent/.ssh")
         ssh_dir.mkdir(parents=True, exist_ok=True)
         auth_keys = ssh_dir / "authorized_keys"
         if not auth_keys.exists():
-            auth_keys.write_text(host_keys.read_text())
-            run_command("chown -R magent:magent /home/magent/.ssh")
-            run_command("chmod 700 /home/magent/.ssh")
-            run_command("chmod 600 /home/magent/.ssh/authorized_keys")
-            logger.info("✓ Copied SSH authorized_keys from host")
+            # Look for public keys in the host's .ssh directory
+            for pubkey in host_ssh.glob("*.pub"):
+                with open(auth_keys, "a") as f:
+                    f.write(pubkey.read_text())
+                logger.info(f"✓ Added {pubkey.name} to authorized_keys")
+            if auth_keys.exists():
+                run_command("chown -R magent:magent /home/magent/.ssh")
+                run_command("chmod 700 /home/magent/.ssh")
+                run_command("chmod 600 /home/magent/.ssh/authorized_keys")
 
     # Git config (mounted to /tmp to avoid volume conflicts)
     host_gitconfig = Path("/tmp/host_gitconfig")
