@@ -8,6 +8,8 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     container_name: magenta-dev
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "2222:22"         # SSH
       - "8080:8080"       # code-server
@@ -51,6 +53,8 @@ services:
       context: ../../memory-lane
       dockerfile: Dockerfile.services
     container_name: memory-lane-local
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       # Connect to hunter postgres via SSH tunnel
       - POSTGRES_HOST=${POSTGRES_HOST:-host.docker.internal}

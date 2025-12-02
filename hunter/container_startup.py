@@ -182,8 +182,10 @@ def configure_github_cli():
 echo "username=magent-cryptograss"
 echo "password=$(gh auth token)"
 ''')
-    run_command(f'chmod +x {helper_script}', user='magent')
-    run_command(f'git config --global credential.helper {helper_script}', user='magent')
+    # Fix ownership since we're running as root
+    run_command(f'chown magent:magent {helper_script}')
+    run_command(f'chmod +x {helper_script}')
+    run_command(f'git config --global credential.helper {helper_script}', user='magent', check=False)
     logger.info("✓ GitHub CLI authenticated")
 
 
