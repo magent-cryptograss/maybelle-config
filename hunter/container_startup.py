@@ -133,40 +133,23 @@ def setup_workspace():
 
 
 def setup_host_files():
-    """Copy host-mounted files into place (for local dev)."""
-    logger.info("=== Setting up host-mounted files ===")
+    """Set up SSH keys and other host-provided config."""
+    logger.info("=== Setting up host-provided files ===")
 
-    # SSH authorized_keys (host .ssh dir mounted to /tmp/host_ssh)
-    host_ssh = Path("/tmp/host_ssh")
-    if host_ssh.exists():
+    # SSH authorized_keys from environment variable
+    ssh_key = os.environ.get('SSH_AUTHORIZED_KEY', '').strip()
+    if ssh_key:
         ssh_dir = Path("/home/magent/.ssh")
         ssh_dir.mkdir(parents=True, exist_ok=True)
         auth_keys = ssh_dir / "authorized_keys"
         if not auth_keys.exists():
-            # Use shell to handle snap docker's weird bind mounts
-            result = run_command("cat /tmp/host_ssh/*.pub 2>/dev/null", check=False)
-            if result.returncode == 0 and result.stdout.strip():
-                auth_keys.write_text(result.stdout)
-                run_command("chown -R magent:magent /home/magent/.ssh")
-                run_command("chmod 700 /home/magent/.ssh")
-                run_command("chmod 600 /home/magent/.ssh/authorized_keys")
-                logger.info("✓ Copied SSH public keys to authorized_keys")
-            else:
-                logger.warning("No SSH public keys found in /tmp/host_ssh/")
-
-    # Git config (mounted to /tmp to avoid volume conflicts)
-    host_gitconfig = Path("/tmp/host_gitconfig")
-    if host_gitconfig.exists():
-        gitconfig = Path("/home/magent/.gitconfig")
-        if not gitconfig.exists():
-            # Use shell to handle snap docker's weird bind mounts
-            result = run_command("cat /tmp/host_gitconfig 2>/dev/null", check=False)
-            if result.returncode == 0 and result.stdout.strip():
-                gitconfig.write_text(result.stdout)
-                run_command("chown magent:magent /home/magent/.gitconfig")
-                logger.info("✓ Copied .gitconfig from host")
-            else:
-                logger.warning("Could not read /tmp/host_gitconfig")
+            auth_keys.write_text(ssh_key + "\n")
+            run_command("chown -R magent:magent /home/magent/.ssh")
+            run_command("chmod 700 /home/magent/.ssh")
+            run_command("chmod 600 /home/magent/.ssh/authorized_keys")
+            logger.info("✓ Set up SSH authorized_keys from environment")
+    else:
+        logger.info("No SSH_AUTHORIZED_KEY provided, skipping SSH setup")
 
 
 def setup_claude_config():
