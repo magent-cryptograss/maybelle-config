@@ -35,6 +35,8 @@ services:
       - CODE_SERVER_PASSWORD={{ user.code_server_password }}
       - GH_TOKEN={{ user.github_token | default('') }}
       - DJANGO_SECRET_KEY={{ user.django_secret_key | default('') }}
+      # Use private network for MCP on hunter (10.0.0.2 is maybelle)
+      - MCP_MEMORY_URL=http://10.0.0.2:8000
     restart: unless-stopped
 
 networks:

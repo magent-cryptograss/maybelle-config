@@ -193,14 +193,15 @@ def configure_mcp_server():
     """Configure MCP servers for Claude Code."""
     logger.info("=== Configuring MCP servers ===")
 
-    # The MCP memory server runs on maybelle, accessible via private network
-    # maybelle's MCP server listens on 10.0.0.2:8000
+    # The MCP memory server runs on maybelle
+    # Use public URL for local dev, private network for hunter deployment
+    mcp_url = os.environ.get('MCP_MEMORY_URL', 'https://mcp.maybelle.cryptograss.live')
     run_command(
-        "claude mcp add --scope user --transport http magenta-memory-v2 http://10.0.0.2:8000",
+        f"claude mcp add --scope user --transport http magenta-memory-v2 {mcp_url}",
         user='magent',
         check=False  # Don't fail if already configured
     )
-    logger.info("✓ MCP memory server configured: http://10.0.0.2:8000 (maybelle)")
+    logger.info(f"✓ MCP memory server configured: {mcp_url}")
 
     # Add Playwright MCP server for browser automation via Docker
     run_command(
