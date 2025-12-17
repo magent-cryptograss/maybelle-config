@@ -339,6 +339,32 @@
         owner: 1000
         group: 1000
 
+    - name: Create PickiPedia secrets directory
+      file:
+        path: "{{ jenkins_home }}/secrets/pickipedia"
+        state: directory
+        mode: '0755'
+        owner: 1000
+        group: 1000
+
+    - name: Deploy PickiPedia LocalSettings.local.php from vault
+      copy:
+        content: |
+          <?php
+          // Secrets deployed from vault - do not edit manually
+          // DB settings point to production NFS MySQL
+          $wgSecretKey = "{{ pickipedia_secret_key }}";
+          $wgUpgradeKey = "{{ pickipedia_upgrade_key }}";
+          $wgDBtype = "mysql";
+          $wgDBserver = "{{ pickipedia_db_server }}";
+          $wgDBname = "{{ pickipedia_db_name }}";
+          $wgDBuser = "{{ pickipedia_db_user }}";
+          $wgDBpassword = "{{ pickipedia_db_password }}";
+        dest: "{{ jenkins_home }}/secrets/pickipedia/LocalSettings.local.php"
+        mode: '0600'
+        owner: 1000
+        group: 1000
+
     - name: Create PR builds directory
       file:
         path: "/var/www/builds"
