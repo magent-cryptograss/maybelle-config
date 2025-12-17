@@ -20,6 +20,8 @@ services:
       # SSH keys mounted separately (read-only for security)
       - {{ base_dir }}/{{ user.name }}/.ssh:/home/magent/.ssh:ro
       - /var/run/docker.sock:/var/run/docker.sock
+      # PickiPedia backups (synced from maybelle daily)
+      - /opt/magenta/pickipedia-backups:/opt/magenta/pickipedia-backups:ro
     networks:
       - magenta-net
     environment:

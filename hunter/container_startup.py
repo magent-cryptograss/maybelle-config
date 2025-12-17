@@ -174,6 +174,49 @@ $wgDBpassword = "pickipedia_dev";
             run_command(f"chown magent:magent {local_settings}")
             logger.info("✓ Created pickipedia LocalSettings.local.php for preview")
 
+        # Create helper script to load production backup into preview
+        load_backup_script = pickipedia_dir / "load-backup.sh"
+        if not load_backup_script.exists():
+            load_backup_script.write_text("""#!/bin/bash
+# Load latest PickiPedia backup into preview MySQL
+# Run this after 'docker-compose up -d' to populate with production data
+
+set -e
+
+BACKUP_DIR="/opt/magenta/pickipedia-backups"  # Synced from maybelle daily
+LATEST_BACKUP=$(ls -t ${BACKUP_DIR}/pickipedia_*.sql.gz 2>/dev/null | head -1)
+
+if [ -z "$LATEST_BACKUP" ]; then
+    echo "No backup found in $BACKUP_DIR"
+    echo "Backups are created daily at 3:30am on maybelle"
+    exit 1
+fi
+
+echo "Loading backup: $LATEST_BACKUP"
+
+# Get container name from compose project
+CONTAINER=$(docker ps --filter "name=pickipedia.*db" --format "{{.Names}}" | head -1)
+if [ -z "$CONTAINER" ]; then
+    echo "MySQL container not running. Start with: docker-compose up -d"
+    exit 1
+fi
+
+# Wait for MySQL to be ready
+echo "Waiting for MySQL..."
+until docker exec "$CONTAINER" mysqladmin ping -h localhost --silent 2>/dev/null; do
+    sleep 1
+done
+
+# Load the backup
+echo "Loading data (this may take a moment)..."
+gunzip -c "$LATEST_BACKUP" | docker exec -i "$CONTAINER" mysql -u pickipedia -ppickipedia_dev pickipedia
+
+echo "Done! PickiPedia preview now has production data."
+""")
+            run_command(f"chown magent:magent {load_backup_script}")
+            run_command(f"chmod +x {load_backup_script}")
+            logger.info("✓ Created pickipedia load-backup.sh script")
+
 
 def setup_host_files():
     """Set up SSH keys and other host-provided config."""
