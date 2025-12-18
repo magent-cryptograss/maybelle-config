@@ -7,7 +7,7 @@ pipelineJob('pickipedia') {
                         url('https://github.com/cryptograss/pickipedia.git')
                         credentials('github-token')
                     }
-                    branch('*/main')
+                    branch('*/production')
                 }
             }
             scriptPath('Jenkinsfile')
