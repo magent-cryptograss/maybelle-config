@@ -22,7 +22,7 @@ mkdir -p "$BACKUP_DIR"
 # Run mysqldump on NFS and pipe back
 BACKUP_FILE="$BACKUP_DIR/pickipedia_$(date +%Y%m%d).sql.gz"
 
-if ssh -i "$SSH_KEY" "${NFS_USER}@${NFS_HOST}" \
+if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${NFS_USER}@${NFS_HOST}" \
     "mysqldump -h pickipedia.db pickipedia" 2>> "$LOG_FILE" \
     | gzip > "$BACKUP_FILE"; then
 
