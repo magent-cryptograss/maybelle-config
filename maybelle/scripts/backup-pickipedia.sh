@@ -22,8 +22,15 @@ mkdir -p "$BACKUP_DIR"
 # Run mysqldump on NFS and pipe back
 BACKUP_FILE="$BACKUP_DIR/pickipedia_$(date +%Y%m%d).sql.gz"
 
+# MySQL credentials file (deployed by ansible from vault)
+MYSQL_CNF="/root/.pickipedia-my.cnf"
+
+# Read credentials from file
+DB_USER=$(grep -oP 'user=\K.*' "$MYSQL_CNF")
+DB_PASS=$(grep -oP 'password=\K.*' "$MYSQL_CNF")
+
 if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "${NFS_USER}@${NFS_HOST}" \
-    "mysqldump -h pickipedia.db pickipedia" 2>> "$LOG_FILE" \
+    "mysqldump -h pickipedia.db -u '$DB_USER' -p'$DB_PASS' pickipedia" 2>> "$LOG_FILE" \
     | gzip > "$BACKUP_FILE"; then
 
     log "Backup successful: $BACKUP_FILE ($(stat -c%s "$BACKUP_FILE") bytes)"

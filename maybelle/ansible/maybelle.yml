@@ -707,6 +707,15 @@
         dest: /usr/local/bin/backup-pickipedia.sh
         mode: '0750'
 
+    - name: Deploy pickipedia MySQL credentials for backup
+      copy:
+        content: |
+          [client]
+          user={{ pickipedia_db_user }}
+          password={{ pickipedia_db_password }}
+        dest: /root/.pickipedia-my.cnf
+        mode: '0600'
+
     - name: Create pickipedia backup log file
       file:
         path: /var/log/pickipedia-backup.log
