@@ -124,8 +124,10 @@
         volumes:
           - "{{ jenkins_home }}:/var/jenkins_home"
           - "/mnt/persist/magenta/backups:/mnt/persist/magenta/backups:ro"
+          - "/mnt/persist/pickipedia/backups:/mnt/persist/pickipedia/backups:ro"
           - "/var/log/nfs-backup.log:/var/log/nfs-backup.log:ro"
           - "/var/log/nfs-deploy.log:/var/log/nfs-deploy.log:ro"
+          - "/var/log/pickipedia-backup.log:/var/log/pickipedia-backup.log:ro"
           # Docker socket removed - Jenkins doesn't need it and it's a security risk
         env_file: "{{ jenkins_home }}/.env"
         env:
@@ -710,6 +712,13 @@
         path: /var/log/pickipedia-backup.log
         state: touch
         mode: '0644'
+
+    - name: Schedule daily pickipedia backup
+      ansible.builtin.cron:
+        name: "pickipedia backup from nfs"
+        hour: "3"
+        minute: "30"
+        job: "/usr/local/bin/backup-pickipedia.sh"
 
     - name: Add NFS pickipedia site to SSH config
       blockinfile:
