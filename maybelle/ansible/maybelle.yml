@@ -699,40 +699,11 @@
         state: directory
         mode: '0755'
 
-    - name: Create pickipedia backup script
+    - name: Deploy pickipedia backup script
       copy:
+        src: "{{ playbook_dir }}/../scripts/backup-pickipedia.sh"
         dest: /usr/local/bin/backup-pickipedia.sh
         mode: '0750'
-        content: |
-          #!/bin/bash
-          # Daily PickiPedia MySQL backup from NFS
-          # Pulls dump via SSH for use in hunter preview environments
-          LOG_FILE="/var/log/pickipedia-backup.log"
-          BACKUP_DIR="/mnt/persist/pickipedia/backups"
-          SSH_KEY="/root/.ssh/id_ed25519_nfs"
-          NFS_HOST="ssh.nyc1.nearlyfreespeech.net"
-          NFS_USER="jmyles_pickipedia"
-
-          echo "$(date): Starting PickiPedia backup" >> "$LOG_FILE"
-
-          # Run mysqldump on NFS and pipe back
-          BACKUP_FILE="$BACKUP_DIR/pickipedia_$(date +%Y%m%d).sql.gz"
-          if ssh -i "$SSH_KEY" "${NFS_USER}@${NFS_HOST}" \
-              "mysqldump -h pickipedia.db pickipedia" 2>> "$LOG_FILE" \
-              | gzip > "$BACKUP_FILE"; then
-              echo "$(date): Backup successful: $BACKUP_FILE ($(stat -c%s "$BACKUP_FILE") bytes)" >> "$LOG_FILE"
-              # Keep last 7 days of backups
-              find "$BACKUP_DIR" -name "pickipedia_*.sql.gz" -mtime +7 -delete
-
-              # Sync to hunter for preview environments
-              echo "$(date): Syncing to hunter..." >> "$LOG_FILE"
-              rsync -avz "$BACKUP_DIR"/ root@hunter.cryptograss.live:/opt/magenta/pickipedia-backups/ >> "$LOG_FILE" 2>&1 || \
-                  echo "$(date): WARNING - sync to hunter failed" >> "$LOG_FILE"
-          else
-              echo "$(date): Backup FAILED" >> "$LOG_FILE"
-              rm -f "$BACKUP_FILE"  # Remove partial file
-              exit 1
-          fi
 
     - name: Create pickipedia backup log file
       file:
