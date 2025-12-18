@@ -31,7 +31,7 @@ pipelineJob('backup-pickipedia') {
                                             echo "\\$LAST_SUCCESS"
 
                                             # Check age - warn if older than 25 hours
-                                            LAST_DATE=\\$(echo "\\$LAST_SUCCESS" | grep -oP '^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}')
+                                            LAST_DATE=\\$(echo "\\$LAST_SUCCESS" | grep -oP '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}')
                                             if [ -n "\\$LAST_DATE" ]; then
                                                 LAST_EPOCH=\\$(date -d "\\$LAST_DATE" +%s 2>/dev/null || echo 0)
                                                 NOW_EPOCH=\\$(date +%s)
