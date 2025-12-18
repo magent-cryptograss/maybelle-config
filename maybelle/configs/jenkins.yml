@@ -50,6 +50,7 @@ jobs:
   - file: /var/jenkins_home/jobs/backup-memory-lane.groovy
   - file: /var/jenkins_home/jobs/deploy-status.groovy
   - file: /var/jenkins_home/jobs/pickipedia.groovy
+  - file: /var/jenkins_home/jobs/backup-pickipedia.groovy
 
 credentials:
   system:

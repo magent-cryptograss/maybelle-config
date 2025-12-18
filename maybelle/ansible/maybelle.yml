@@ -711,13 +711,6 @@
         state: touch
         mode: '0644'
 
-    - name: Schedule daily pickipedia backup
-      ansible.builtin.cron:
-        name: "pickipedia backup from nfs"
-        hour: "3"
-        minute: "30"
-        job: "/usr/local/bin/backup-pickipedia.sh"
-
     - name: Add NFS pickipedia site to SSH config
       blockinfile:
         path: /root/.ssh/config
