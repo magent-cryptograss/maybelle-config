@@ -145,15 +145,19 @@ def setup_workspace():
         # Create .env with user-specific settings
         pickipedia_env = pickipedia_dir / ".env"
         dev_name = os.environ.get('DEVELOPER_NAME', 'dev')
+        # Calculate port based on SSH port offset (justin=4005, rj=4006, skyler=4007)
+        ssh_port = int(os.environ.get('SSH_PORT', '2222'))
+        wiki_port = 4005 + (ssh_port - 2222)
         if not pickipedia_env.exists():
             pickipedia_env.write_text(f"""# PickiPedia local preview settings for {dev_name}
 MEDIAWIKI_VERSION=1.43.0
-WIKI_PORT=4005
+WIKI_PORT={wiki_port}
 COMPOSE_PROJECT_NAME=pickipedia-{dev_name}
 DB_NAME=pickipedia
 DB_USER=pickipedia
 DB_PASSWORD=pickipedia_dev
 DB_ROOT_PASSWORD=root_dev
+WIKI_URL=https://pickipedia.{dev_name}.hunter.cryptograss.live
 """)
             run_command(f"chown magent:magent {pickipedia_env}")
             logger.info("✓ Created pickipedia .env for local preview")
@@ -394,6 +398,41 @@ def setup_environment_variables():
         logger.info("✓ Environment variables already configured")
 
 
+def start_pickipedia_preview():
+    """Start PickiPedia preview environment using docker-compose."""
+    logger.info("=== Starting PickiPedia preview ===")
+
+    pickipedia_dir = Path("/home/magent/workspace/pickipedia")
+    if not pickipedia_dir.exists():
+        logger.warning("PickiPedia directory not found, skipping preview startup")
+        return
+
+    # Check if docker-compose.yml exists
+    compose_file = pickipedia_dir / "docker-compose.yml"
+    if not compose_file.exists():
+        logger.warning("PickiPedia docker-compose.yml not found, skipping")
+        return
+
+    # Get the host path for volume mounts (container path -> host path)
+    dev_name = os.environ.get('DEVELOPER_NAME', 'dev')
+    host_pickipedia_dir = f"/opt/magenta/{dev_name}/home/workspace/pickipedia"
+
+    # Start docker-compose with host path for volumes
+    logger.info(f"Starting PickiPedia containers for {dev_name}...")
+    result = run_command(
+        f"PICKIPEDIA_DIR={host_pickipedia_dir} docker compose up -d",
+        cwd=pickipedia_dir,
+        check=False
+    )
+
+    if result.returncode == 0:
+        logger.info("✓ PickiPedia preview started on port 4005")
+        logger.info(f"  Access at: https://pickipedia.{dev_name}.hunter.cryptograss.live")
+    else:
+        logger.warning("PickiPedia preview failed to start (non-fatal)")
+        logger.warning(f"  Error: {result.stderr if hasattr(result, 'stderr') else 'unknown'}")
+
+
 def start_services():
     """Start required services."""
     logger.info("=== Starting services ===")
@@ -411,6 +450,9 @@ def start_services():
 
     # Note: PostgreSQL runs in separate container, not started here
     logger.info("✓ Using shared PostgreSQL container")
+
+    # Start PickiPedia preview environment
+    start_pickipedia_preview()
 
 
 def main():

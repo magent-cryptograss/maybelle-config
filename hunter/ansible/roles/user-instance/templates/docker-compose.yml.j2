@@ -14,6 +14,8 @@ services:
       - "{{ user.port_range_start }}-{{ user.port_range_start + 9 }}:4000-4009"
       # Mosh UDP port range (60000-61000 in container, mapped to unique range per user)
       - "{{ user.mosh_port_start | default(60000 + (user.ssh_port - 2222) * 100) }}-{{ user.mosh_port_start | default(60000 + (user.ssh_port - 2222) * 100) + 99 }}:60000-60099/udp"
+      # PickiPedia preview (4005 for justin, 4006 for rj, 4007 for skyler)
+      - "{{ 4005 + (user.ssh_port - 2222) }}:{{ 4005 + (user.ssh_port - 2222) }}"
     volumes:
       # Mount entire home directory to persist workspace, .claude, bash history, etc
       - {{ base_dir }}/{{ user.name }}/home:/home/magent
@@ -36,6 +38,7 @@ services:
       - CODE_SERVER_PASSWORD={{ user.code_server_password }}
       - GH_TOKEN={{ user.github_token | default('') }}
       - DJANGO_SECRET_KEY={{ user.django_secret_key | default('') }}
+      - SSH_PORT={{ user.ssh_port }}
       # Use private network for MCP on hunter (10.0.0.2 is maybelle)
       - MCP_MEMORY_URL=http://10.0.0.2:8000
     restart: unless-stopped
