@@ -14,8 +14,8 @@ services:
       - "{{ user.port_range_start }}-{{ user.port_range_start + 9 }}:4000-4009"
       # Mosh UDP port range (60000-61000 in container, mapped to unique range per user)
       - "{{ user.mosh_port_start | default(60000 + (user.ssh_port - 2222) * 100) }}-{{ user.mosh_port_start | default(60000 + (user.ssh_port - 2222) * 100) + 99 }}:60000-60099/udp"
-      # PickiPedia preview (4005 for justin, 4006 for rj, 4007 for skyler)
-      - "{{ 4005 + (user.ssh_port - 2222) }}:{{ 4005 + (user.ssh_port - 2222) }}"
+      # NOTE: PickiPedia runs as sibling container (not inside arthel), so no port mapping here.
+      # Pickipedia containers bind directly to host ports 4005-4007.
     volumes:
       # Mount entire home directory to persist workspace, .claude, bash history, etc
       - {{ base_dir }}/{{ user.name }}/home:/home/magent
