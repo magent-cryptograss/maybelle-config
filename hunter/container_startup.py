@@ -417,6 +417,10 @@ def start_pickipedia_preview():
     dev_name = os.environ.get('DEVELOPER_NAME', 'dev')
     host_pickipedia_dir = f"/opt/magenta/{dev_name}/home/workspace/pickipedia"
 
+    # Pull latest pickipedia config (ensures shared image reference, etc.)
+    logger.info("Pulling latest pickipedia config...")
+    run_command("git pull --ff-only", cwd=pickipedia_dir, user='magent', check=False)
+
     # Start docker-compose with host path for volumes
     logger.info(f"Starting PickiPedia containers for {dev_name}...")
     result = run_command(
