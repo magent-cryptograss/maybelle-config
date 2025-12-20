@@ -339,11 +339,12 @@
           echo "$(date): Starting PickiPedia deploy - $BUILD_INFO" >> "$LOG_FILE"
 
           # Perform the rsync
-          # Note: Exclude .deploy-ready marker from sync
           # --chmod ensures files are world-readable on NFS
+          # Exclude images/ so uploads persist and remain writable
           if rsync -vah --delete \
               --chmod=F644,D755 \
               --exclude='.deploy-ready' \
+              --exclude='images/' \
               "$BUILD_DIR"/ \
               "$NFS_TARGET" >> "$LOG_FILE" 2>&1; then
 
