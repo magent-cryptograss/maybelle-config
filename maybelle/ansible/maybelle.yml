@@ -107,6 +107,23 @@
         group: 1000
       notify: Restart Jenkins container
 
+    - name: Check if log paths are directories (Docker creates dirs for missing mount sources)
+      stat:
+        path: "{{ item }}"
+      register: log_stats
+      loop:
+        - /var/log/nfs-backup.log
+        - /var/log/nfs-deploy.log
+        - /var/log/pickipedia-backup.log
+        - /var/log/pickipedia-deploy.log
+
+    - name: Remove log paths if they are directories
+      file:
+        path: "{{ item.stat.path }}"
+        state: absent
+      loop: "{{ log_stats.results }}"
+      when: item.stat.exists and item.stat.isdir
+
     - name: Create log files for Jenkins to read
       file:
         path: "{{ item }}"
@@ -115,6 +132,8 @@
       loop:
         - /var/log/nfs-backup.log
         - /var/log/nfs-deploy.log
+        - /var/log/pickipedia-backup.log
+        - /var/log/pickipedia-deploy.log
 
     - name: Start Jenkins container
       docker_container:
@@ -294,25 +313,6 @@
         name: "deploy to nfs"
         job: "/usr/local/bin/deploy-to-nfs.sh"
         minute: "*/2"
-
-    - name: Check if pickipedia deploy log is a directory
-      stat:
-        path: /var/log/pickipedia-deploy.log
-      register: pickipedia_log_stat
-
-    - name: Remove pickipedia deploy log if it's a directory
-      file:
-        path: /var/log/pickipedia-deploy.log
-        state: absent
-      when: pickipedia_log_stat.stat.exists and pickipedia_log_stat.stat.isdir
-
-    - name: Create PickiPedia deploy log file
-      file:
-        path: /var/log/pickipedia-deploy.log
-        state: touch
-        owner: root
-        group: root
-        mode: '0644'
 
     - name: Create PickiPedia production deploy script
       copy:
