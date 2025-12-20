@@ -417,10 +417,11 @@ def start_pickipedia_preview():
     dev_name = os.environ.get('DEVELOPER_NAME', 'dev')
     host_pickipedia_dir = f"/opt/magenta/{dev_name}/home/workspace/pickipedia"
 
-    # Pull latest pickipedia config (ensures shared image reference, etc.)
+    # Pull latest pickipedia config from production branch
     logger.info("Pulling latest pickipedia config...")
     run_command(f"git config --global --add safe.directory {pickipedia_dir}", check=False)
-    run_command("git pull --ff-only", cwd=pickipedia_dir, user='magent', check=False)
+    run_command("git checkout production", cwd=pickipedia_dir, user='magent', check=False)
+    run_command("git pull --ff-only origin production", cwd=pickipedia_dir, user='magent', check=False)
 
     # Start docker-compose with host path for volumes
     logger.info(f"Starting PickiPedia containers for {dev_name}...")
