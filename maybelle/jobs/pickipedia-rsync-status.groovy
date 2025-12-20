@@ -40,12 +40,12 @@ pipelineJob('pickipedia-rsync-status') {
 
                                         echo ""
                                         echo "=== Last Successful Deploy ==="
-                                        LAST_SUCCESS=\\$(grep "Deploy successful" "\\$DEPLOY_LOG" | tail -1)
+                                        LAST_SUCCESS=\\$(grep -i "deploy successful" "\\$DEPLOY_LOG" | tail -1)
                                         if [ -n "\\$LAST_SUCCESS" ]; then
                                             echo "\\$LAST_SUCCESS"
 
                                             # Check age of last successful deploy
-                                            LAST_TIME=\\$(echo "\\$LAST_SUCCESS" | sed 's/: Deploy successful//')
+                                            LAST_TIME=\\$(echo "\\$LAST_SUCCESS" | sed 's/: .*[Dd]eploy successful//')
                                             LAST_EPOCH=\\$(date -d "\\$LAST_TIME" +%s 2>/dev/null || echo 0)
                                             NOW_EPOCH=\\$(date +%s)
                                             AGE_MINUTES=\\$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
