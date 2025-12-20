@@ -163,9 +163,10 @@ WIKI_URL=https://pickipedia.{dev_name}.hunter.cryptograss.live
         logger.info(f"✓ Pickipedia .env configured (port {wiki_port})")
 
         # Create LocalSettings.local.php for docker-compose preview
+        # Always regenerate to ensure banner and correct URL are present
         local_settings = pickipedia_dir / "LocalSettings.local.php"
-        if not local_settings.exists():
-            local_settings.write_text("""<?php
+        wiki_url = f"https://pickipedia.{dev_name}.hunter.cryptograss.live"
+        local_settings.write_text(f"""<?php
 // Local preview settings - connects to docker-compose MySQL
 $wgSecretKey = "dev-secret-key-not-for-production-use-only";
 $wgUpgradeKey = "dev-upgrade-key";
@@ -174,9 +175,21 @@ $wgDBserver = "db";  // docker-compose service name
 $wgDBname = "pickipedia";
 $wgDBuser = "pickipedia";
 $wgDBpassword = "pickipedia_dev";
+
+// Override server URL for preview
+$wgServer = "{wiki_url}";
+
+// Preview environment banner
+$wgSiteNotice = '<div style="background: #ffcc00; color: #000; padding: 10px; text-align: center; font-weight: bold; border: 2px solid #cc9900; margin-bottom: 10px;">
+    PREVIEW ENVIRONMENT - This is not the production database. Changes will NOT be saved.
+</div>';
+
+// Enable debugging for preview
+$wgShowExceptionDetails = true;
+$wgShowDBErrorBacktrace = true;
 """)
-            run_command(f"chown magent:magent {local_settings}")
-            logger.info("✓ Created pickipedia LocalSettings.local.php for preview")
+        run_command(f"chown magent:magent {local_settings}")
+        logger.info("✓ Created pickipedia LocalSettings.local.php for preview")
 
         # Create helper script to load production backup into preview
         load_backup_script = pickipedia_dir / "load-backup.sh"
