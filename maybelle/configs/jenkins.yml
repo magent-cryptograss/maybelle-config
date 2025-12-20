@@ -43,13 +43,14 @@ jenkins:
             value: "/var/jenkins_home/secrets"
 
 jobs:
-  - file: /var/jenkins_home/jobs/production.groovy
-  - file: /var/jenkins_home/jobs/pull-requests.groovy
-  - file: /var/jenkins_home/jobs/fetch-chain-data.groovy
+  - file: /var/jenkins_home/jobs/arthel-production-build.groovy
+  - file: /var/jenkins_home/jobs/arthel-branches-builds.groovy
+  - file: /var/jenkins_home/jobs/arthel-fetch-chain-data.groovy
+  - file: /var/jenkins_home/jobs/arthel-rsync-status.groovy
   - file: /var/jenkins_home/jobs/deploy-hunter.groovy
   - file: /var/jenkins_home/jobs/backup-memory-lane.groovy
-  - file: /var/jenkins_home/jobs/deploy-status.groovy
-  - file: /var/jenkins_home/jobs/pickipedia.groovy
+  - file: /var/jenkins_home/jobs/pickipedia-build.groovy
+  - file: /var/jenkins_home/jobs/pickipedia-rsync-status.groovy
   - file: /var/jenkins_home/jobs/backup-pickipedia.groovy
 
 credentials:
