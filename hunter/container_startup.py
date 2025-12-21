@@ -374,7 +374,7 @@ def configure_mcp_server():
 
         # Add the MCP server
         run_command(
-            f"claude mcp add --scope user --transport stdio pickipedia 'npx -y @professional-wiki/mediawiki-mcp-server@latest' -e CONFIG={mw_config_file}",
+            f"claude mcp add --scope user --transport stdio pickipedia --env CONFIG={mw_config_file} -- npx -y @professional-wiki/mediawiki-mcp-server@latest",
             user='magent',
             check=False
         )
