@@ -41,6 +41,8 @@ services:
       - SSH_PORT={{ user.ssh_port }}
       # Use private network for MCP on hunter (10.0.0.2 is maybelle)
       - MCP_MEMORY_URL=http://10.0.0.2:8000
+      # PickiPedia bot credentials for MediaWiki MCP server
+      - PICKIPEDIA_BOT_PASSWORD={{ PICKIPEDIA_BOT_PASSWORD }}
     restart: unless-stopped
 
 networks:

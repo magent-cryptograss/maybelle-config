@@ -72,7 +72,8 @@
             "Bash(grep:*)",
             "Bash(docker:*)",
             "Bash(docker-compose:*)",
-            "mcp__magenta-memory-v2"
+            "mcp__magenta-memory-v2",
+            "mcp__pickipedia"
           ]
         }
       }

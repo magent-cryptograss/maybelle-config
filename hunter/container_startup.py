@@ -342,6 +342,46 @@ def configure_mcp_server():
     )
     logger.info("✓ Jenkins MCP server configured: https://maybelle.cryptograss.live/mcp-server/mcp")
 
+    # Add MediaWiki MCP server for PickiPedia
+    pickipedia_bot_password = os.environ.get('PICKIPEDIA_BOT_PASSWORD', '')
+    if pickipedia_bot_password:
+        # Create config file for MediaWiki MCP server
+        mw_config_dir = Path("/home/magent/.config/mediawiki-mcp")
+        mw_config_dir.mkdir(parents=True, exist_ok=True)
+        mw_config_file = mw_config_dir / "config.json"
+
+        import json
+        mw_config = {
+            "defaultWiki": "pickipedia.xyz",
+            "wikis": {
+                "pickipedia.xyz": {
+                    "sitename": "PickiPedia",
+                    "server": "https://pickipedia.xyz",
+                    "articlepath": "/wiki",
+                    "scriptpath": "",
+                    "username": "Magent@magent",
+                    "password": pickipedia_bot_password,
+                    "private": False
+                }
+            }
+        }
+        with open(mw_config_file, 'w') as f:
+            json.dump(mw_config, f, indent=2)
+
+        # Set proper ownership
+        run_command(f"chown magent:magent {mw_config_file}")
+        run_command(f"chmod 600 {mw_config_file}")  # Protect credentials
+
+        # Add the MCP server
+        run_command(
+            f"claude mcp add --scope user --transport stdio pickipedia 'npx -y @professional-wiki/mediawiki-mcp-server@latest' -e CONFIG={mw_config_file}",
+            user='magent',
+            check=False
+        )
+        logger.info("✓ PickiPedia MediaWiki MCP server configured")
+    else:
+        logger.warning("⚠ PICKIPEDIA_BOT_PASSWORD not set, skipping MediaWiki MCP server")
+
 
 def configure_claude_settings():
     """Configure Claude Code settings."""
