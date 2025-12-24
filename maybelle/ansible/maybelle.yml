@@ -345,6 +345,7 @@
               --chmod=F644,D755 \
               --exclude='.deploy-ready' \
               --exclude='images/' \
+              --exclude='extensions/SemanticMediaWiki/.smw.json' \
               "$BUILD_DIR"/ \
               "$NFS_TARGET" >> "$LOG_FILE" 2>&1; then
 
