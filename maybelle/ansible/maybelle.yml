@@ -324,7 +324,7 @@
           # Only deploys if Jenkins has marked a successful build
 
           MARKER_FILE="/var/jenkins_home/pickipedia_stage/.deploy-ready"
-          PAUSE_FILE="/var/jenkins_home/pickipedia_stage/.deploy-paused"
+          PAUSE_FILE="/var/jenkins_home/.pickipedia-deploy-paused"
           BUILD_DIR="/var/jenkins_home/pickipedia_stage"
           LOG_FILE="/var/log/pickipedia-deploy.log"
           NFS_TARGET="nfs-pickipedia:"
