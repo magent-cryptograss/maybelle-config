@@ -432,6 +432,9 @@
           $wgDBname = "{{ pickipedia_db_name }}";
           $wgDBuser = "{{ pickipedia_db_user }}";
           $wgDBpassword = "{{ pickipedia_db_password }}";
+
+          // Error tracking - GlitchTip (Sentry-compatible)
+          $wgSentryDsn = "{{ pickipedia_sentry_dsn | default('') }}";
         dest: "{{ jenkins_home }}/secrets/pickipedia/LocalSettings.local.php"
         mode: '0600'
         owner: 1000
