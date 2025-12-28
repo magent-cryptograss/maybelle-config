@@ -864,7 +864,7 @@
                 - postgres
                 - redis
               ports:
-                - "127.0.0.1:8800:8000"
+                - "127.0.0.1:8800:8080"
               environment:
                 DATABASE_URL: postgres://glitchtip:{{ glitchtip_postgres_password }}@postgres:5432/glitchtip
                 REDIS_URL: redis://redis:6379/0
