@@ -349,11 +349,13 @@
           # --chmod ensures files are world-readable on NFS
           # Exclude images/ so uploads persist and remain writable
           # Exclude stats/ for GoAccess-generated analytics reports
+          # Exclude .git directories - no need for version control metadata in prod
           if rsync -vah --delete \
               --chmod=F644,D755 \
               --exclude='.deploy-ready' \
               --exclude='images/' \
               --exclude='stats/' \
+              --exclude='.git' \
               --exclude='extensions/SemanticMediaWiki/.smw.json' \
               "$BUILD_DIR"/ \
               "$NFS_TARGET" >> "$LOG_FILE" 2>&1; then
