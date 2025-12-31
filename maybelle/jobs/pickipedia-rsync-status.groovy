@@ -208,7 +208,7 @@ pipelineJob('pickipedia-rsync-status') {
                                         tail -30 "\\$DEPLOY_LOG"
                                         echo ""
                                         echo "=== Recent Errors in Log ==="
-                                        grep -i "error\\|fail\\|denied\\|refused\\|timeout\\|paused" "\\$DEPLOY_LOG" | tail -10 || echo "(no errors found)"
+                                        grep -iE "error|fail|denied|refused|timeout|paused" "\\$DEPLOY_LOG" | tail -10 || echo "(no errors found)"
                                     else
                                         echo "*** DEPLOY LOG MISSING: \\$DEPLOY_LOG ***"
                                     fi
