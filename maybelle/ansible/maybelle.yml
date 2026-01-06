@@ -27,7 +27,7 @@
 
     - name: Deploy maybelle SSH login banner
       copy:
-        src: "{{ playbook_dir }}/../../ascii-art/maybelle-ascii.txt"
+        src: "{{ playbook_dir }}/../../ascii-art/maybelle-ascii-dark.txt"
         dest: /etc/motd
         mode: '0644'
 

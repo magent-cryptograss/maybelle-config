@@ -25,6 +25,18 @@
         state: directory
         mode: '0755'
 
+    - name: Create ascii-art directory
+      file:
+        path: /opt/magenta/ascii-art
+        state: directory
+        mode: '0755'
+
+    - name: Deploy ASCII art files
+      copy:
+        src: "{{ playbook_dir }}/../../ascii-art/"
+        dest: /opt/magenta/ascii-art/
+        mode: '0644'
+
     - name: Include Security role (SSH hardening, fail2ban, firewall)
       include_role:
         name: security
