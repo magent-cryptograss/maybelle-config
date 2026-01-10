@@ -51,6 +51,7 @@ jobs:
   - file: /var/jenkins_home/jobs/backup-memory-lane.groovy
   - file: /var/jenkins_home/jobs/pickipedia-build.groovy
   - file: /var/jenkins_home/jobs/pickipedia-rsync-status.groovy
+  - file: /var/jenkins_home/jobs/pickipedia-uptime.groovy
   - file: /var/jenkins_home/jobs/backup-pickipedia.groovy
 
 credentials:
