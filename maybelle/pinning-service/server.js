@@ -1,4 +1,5 @@
 import express from 'express';
+import cors from 'cors';
 import multer from 'multer';
 import { execSync, spawn } from 'child_process';
 import { createReadStream, statSync, unlinkSync, existsSync } from 'fs';
@@ -8,6 +9,38 @@ import FormData from 'form-data';
 import { requireWalletAuth } from './auth.js';
 
 const app = express();
+
+// CORS configuration - allow requests from cryptograss domains
+const allowedOrigins = [
+  'https://cryptograss.live',
+  'https://www.cryptograss.live',
+  /\.hunter\.cryptograss\.live$/,  // All hunter dev subdomains
+  /localhost:\d+$/,
+];
+
+app.use(cors({
+  origin: function(origin, callback) {
+    // Allow requests with no origin (curl, server-to-server)
+    if (!origin) return callback(null, true);
+
+    // Check if origin matches any allowed pattern
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed instanceof RegExp) {
+        return allowed.test(origin);
+      }
+      return origin === allowed;
+    });
+
+    if (isAllowed) {
+      callback(null, true);
+    } else {
+      console.log(`CORS blocked origin: ${origin}`);
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
