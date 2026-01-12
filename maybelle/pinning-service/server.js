@@ -5,6 +5,7 @@ import { createReadStream, statSync, unlinkSync, existsSync } from 'fs';
 import { join } from 'path';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
+import { requireWalletAuth } from './auth.js';
 
 const app = express();
 app.use(express.json());
@@ -14,7 +15,7 @@ const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_SECRET_KEY = process.env.PINATA_SECRET_KEY;
 const IPFS_API_URL = process.env.IPFS_API_URL || 'http://ipfs:5001';
 const STAGING_DIR = process.env.STAGING_DIR || '/staging';
-const API_KEY = process.env.PINNING_API_KEY; // Simple auth for the service
+const AUTHORIZED_WALLETS = process.env.AUTHORIZED_WALLETS || '';
 
 // File upload handling
 const upload = multer({
@@ -22,26 +23,13 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 } // 500MB max
 });
 
-// Simple API key auth middleware
-function requireAuth(req, res, next) {
-  const providedKey = req.headers['x-api-key'];
-  if (!API_KEY) {
-    console.warn('WARNING: No PINNING_API_KEY set, allowing all requests');
-    return next();
-  }
-  if (providedKey !== API_KEY) {
-    return res.status(401).json({ error: 'Invalid or missing API key' });
-  }
-  next();
-}
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
 // Download video from URL (Instagram, YouTube, etc.) and pin to IPFS
-app.post('/pin-from-url', requireAuth, async (req, res) => {
+app.post('/pin-from-url', requireWalletAuth, async (req, res) => {
   const { url } = req.body;
 
   if (!url) {
@@ -96,7 +84,7 @@ app.post('/pin-from-url', requireAuth, async (req, res) => {
 });
 
 // Upload file directly and pin to IPFS
-app.post('/pin-file', requireAuth, upload.single('file'), async (req, res) => {
+app.post('/pin-file', requireWalletAuth, upload.single('file'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
   }
@@ -121,7 +109,7 @@ app.post('/pin-file', requireAuth, upload.single('file'), async (req, res) => {
 });
 
 // Pin an existing CID to local IPFS node (for redundancy)
-app.post('/pin-cid', requireAuth, async (req, res) => {
+app.post('/pin-cid', requireWalletAuth, async (req, res) => {
   const { cid } = req.body;
 
   if (!cid) {
@@ -226,5 +214,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`Blue Railroad Pinning Service listening on port ${PORT}`);
   console.log(`Pinata configured: ${PINATA_API_KEY ? 'yes' : 'NO - uploads will fail'}`);
   console.log(`IPFS API URL: ${IPFS_API_URL}`);
-  console.log(`API key auth: ${API_KEY ? 'enabled' : 'DISABLED (open access)'}`);
+  const walletCount = AUTHORIZED_WALLETS.split(',').filter(w => w.trim()).length;
+  console.log(`Wallet auth: ${walletCount} authorized wallet(s)`);
 });
