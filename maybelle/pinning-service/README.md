@@ -67,13 +67,13 @@ Health check (no auth required).
 Add these to `secrets/vault.yml`:
 
 ```yaml
-# Pinata IPFS pinning service credentials
-# Get from https://app.pinata.cloud/keys
-pinata_api_key: "your-pinata-api-key"
-pinata_secret_key: "your-pinata-secret-api-key"
+# Pinata IPFS pinning service JWT
+# Get from https://app.pinata.cloud/keys - create an API key with "write files" permission
+pinata_jwt: "your-pinata-jwt-token"
 
 # Comma-separated list of wallet addresses authorized to use the pinning service
 # Typically the Blue Railroad contract owner
+# IMPORTANT: Must be quoted as a string to preserve hex format
 pinning_authorized_wallets: "0x4f84b3650dbf651732a41647618e7ff94a633f09"
 ```
 

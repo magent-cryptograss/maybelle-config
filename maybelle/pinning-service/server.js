@@ -44,6 +44,8 @@ app.use(cors({
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
+const PINATA_JWT = process.env.PINATA_JWT;
+// Legacy keys kept for backwards compatibility during transition
 const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_SECRET_KEY = process.env.PINATA_SECRET_KEY;
 const IPFS_API_URL = process.env.IPFS_API_URL || 'http://ipfs:5001';
@@ -191,30 +193,29 @@ async function pinFile(filePath, filename) {
   };
 }
 
-// Upload to Pinata
+// Upload to Pinata using v3 API with JWT
 async function uploadToPinata(filePath, filename) {
-  if (!PINATA_API_KEY || !PINATA_SECRET_KEY) {
-    throw new Error('Pinata API credentials not configured');
+  if (!PINATA_JWT) {
+    throw new Error('Pinata JWT not configured');
   }
 
   const form = new FormData();
   form.append('file', createReadStream(filePath), filename);
 
-  // Add metadata
-  const metadata = JSON.stringify({
-    name: filename,
-    keyvalues: {
-      source: 'blue-railroad',
-      timestamp: new Date().toISOString()
-    }
-  });
-  form.append('pinataMetadata', metadata);
+  // v3 API uses 'name' field for the file name in metadata
+  form.append('name', filename);
 
-  const response = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+  // Add keyvalues as JSON
+  const keyvalues = JSON.stringify({
+    source: 'blue-railroad',
+    timestamp: new Date().toISOString()
+  });
+  form.append('keyvalues', keyvalues);
+
+  const response = await fetch('https://uploads.pinata.cloud/v3/files', {
     method: 'POST',
     headers: {
-      'pinata_api_key': PINATA_API_KEY,
-      'pinata_secret_api_key': PINATA_SECRET_KEY,
+      'Authorization': `Bearer ${PINATA_JWT}`,
     },
     body: form
   });
@@ -225,7 +226,8 @@ async function uploadToPinata(filePath, filename) {
   }
 
   const result = await response.json();
-  return result.IpfsHash;
+  // v3 API returns the CID in data.cid
+  return result.data.cid;
 }
 
 // Pin CID to local IPFS node
@@ -245,7 +247,7 @@ async function pinToLocalIPFS(cid) {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Blue Railroad Pinning Service listening on port ${PORT}`);
-  console.log(`Pinata configured: ${PINATA_API_KEY ? 'yes' : 'NO - uploads will fail'}`);
+  console.log(`Pinata configured: ${PINATA_JWT ? 'yes (JWT)' : 'NO - uploads will fail'}`);
   console.log(`IPFS API URL: ${IPFS_API_URL}`);
   const walletCount = AUTHORIZED_WALLETS.split(',').filter(w => w.trim()).length;
   console.log(`Wallet auth: ${walletCount} authorized wallet(s)`);

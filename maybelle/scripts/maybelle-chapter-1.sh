@@ -15,9 +15,28 @@
 #   - ANSIBLE_VAULT_PASSWORD_FILE env var set on your laptop
 #
 # Usage:
-#   ./maybelle/scripts/maybelle-chapter-1.sh
+#   ./maybelle/scripts/maybelle-chapter-1.sh [--rebuild]
+#
+# Options:
+#   --rebuild    Force rebuild of docker images (no cache)
 
 set -e
+
+# Parse command line arguments
+REBUILD_IMAGES=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --rebuild)
+            REBUILD_IMAGES="true"
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--rebuild]"
+            exit 1
+            ;;
+    esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/../config.yml"
@@ -91,6 +110,7 @@ MOUNT_POINT="__MOUNT_POINT__"
 REPO_DIR="__REPO_DIR__"
 VAULT_PASSWORD_FILE="__VAULT_PASSWORD_FILE__"
 VOLUME_DEVICE="__VOLUME_DEVICE__"
+REBUILD_IMAGES="__REBUILD_IMAGES__"
 
 # Mount volume if not already mounted
 echo "Checking Hetzner volume..."
@@ -137,6 +157,25 @@ else
 fi
 
 echo ""
+
+# If rebuild flag is set, rebuild docker images before running ansible
+if [ -n "$REBUILD_IMAGES" ]; then
+    echo "Rebuilding docker images (--no-cache)..."
+
+    # Rebuild pinning-service if it has a docker-compose.yml
+    PINNING_DIR="${MOUNT_POINT}/pinning-service"
+    if [ -f "$PINNING_DIR/docker-compose.yml" ]; then
+        echo "Rebuilding pinning-service..."
+        cd "$PINNING_DIR"
+        docker-compose down || true
+        docker-compose build --no-cache
+    fi
+
+    # Could add other services here as needed
+    echo "Docker images rebuilt."
+    echo ""
+fi
+
 echo "Running ansible playbook..."
 cd "$REPO_DIR/maybelle/ansible"
 ansible-playbook -i localhost, maybelle.yml --vault-password-file "$VAULT_PASSWORD_FILE"
@@ -154,6 +193,7 @@ REMOTE_SCRIPT="${REMOTE_SCRIPT//__MOUNT_POINT__/$MOUNT_POINT}"
 REMOTE_SCRIPT="${REMOTE_SCRIPT//__REPO_DIR__/$REPO_DIR}"
 REMOTE_SCRIPT="${REMOTE_SCRIPT//__VAULT_PASSWORD_FILE__/$VAULT_PASSWORD_FILE}"
 REMOTE_SCRIPT="${REMOTE_SCRIPT//__VOLUME_DEVICE__/$VOLUME_DEVICE}"
+REMOTE_SCRIPT="${REMOTE_SCRIPT//__REBUILD_IMAGES__/$REBUILD_IMAGES}"
 
 # Copy script to maybelle and run it via mosh/tmux
 REMOTE_SCRIPT_PATH="/tmp/chapter-1-script.sh"
