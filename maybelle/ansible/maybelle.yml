@@ -370,7 +370,20 @@
               rm -f "$MARKER_FILE"
               echo "$(date): PickiPedia deploy successful" >> "$LOG_FILE"
 
-              # Run Blue Railroad import directly on NFS after successful deploy
+              # Sync chain data to NFS for Blue Railroad import
+              CHAIN_DATA_SRC="/var/jenkins_home/shared/chain_data"
+              if [ -f "$CHAIN_DATA_SRC/chainData.json" ]; then
+                  echo "$(date): Syncing chain data to NFS..." >> "$LOG_FILE"
+                  rsync -avz \
+                      -e "ssh -i /root/.ssh/id_ed25519_nfs -o StrictHostKeyChecking=no" \
+                      "$CHAIN_DATA_SRC/chainData.json" \
+                      "jmyles_pickipedia@ssh.nyc1.nearlyfreespeech.net:/home/public/chain-data/" >> "$LOG_FILE" 2>&1 || \
+                      echo "$(date): Chain data sync failed (continuing anyway)" >> "$LOG_FILE"
+              else
+                  echo "$(date): No chain data found at $CHAIN_DATA_SRC/chainData.json" >> "$LOG_FILE"
+              fi
+
+              # Run Blue Railroad import on NFS
               echo "$(date): Running Blue Railroad import..." >> "$LOG_FILE"
               if ssh -i /root/.ssh/id_ed25519_nfs -o StrictHostKeyChecking=no \
                   jmyles_pickipedia@ssh.nyc1.nearlyfreespeech.net \
