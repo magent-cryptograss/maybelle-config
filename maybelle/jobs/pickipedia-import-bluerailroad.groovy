@@ -1,5 +1,5 @@
 pipelineJob('pickipedia-import-bluerailroad') {
-    description('Import Blue Railroad token data from chain-data into PickiPedia wiki pages. Triggered after pickipedia deploys.')
+    description('Import Blue Railroad token data into PickiPedia wiki pages. Runs automatically after pickipedia deploys via host cron. Check /var/log/pickipedia-deploy.log for import status.')
 
     definition {
         cps {
@@ -12,35 +12,32 @@ pipelineJob('pickipedia-import-bluerailroad') {
                     }
 
                     stages {
-                        stage('Run import on NFS') {
+                        stage('Check import status') {
                             steps {
                                 script {
-                                    def result = sh(
-                                        script: """
-                                            ssh nfs-pickipedia 'cd ~/public && php extensions/BlueRailroadIntegration/maintenance/importBlueRailroads.php 2>&1'
-                                        """,
-                                        returnStdout: true
-                                    ).trim()
+                                    echo "=== Blue Railroad Import Status ==="
+                                    echo ""
+                                    echo "The import runs automatically from the HOST deploy cron after each"
+                                    echo "successful PickiPedia deployment. It cannot run from Jenkins directly"
+                                    echo "because the SSH keys are on the host, not in the container."
+                                    echo ""
+                                    echo "To check import status, review the deploy log:"
 
-                                    echo "=== Import Output ==="
-                                    echo result
+                                    sh '''
+                                        echo "=== Recent Import Activity ==="
+                                        grep -i "blue railroad" /var/log/pickipedia-deploy.log 2>/dev/null | tail -10 || echo "(no import entries found)"
 
-                                    // Check for errors in output
-                                    if (result.contains('Error') || result.contains('Fatal')) {
-                                        error("Import script reported errors")
-                                    }
+                                        echo ""
+                                        echo "=== Last Successful Deploy ==="
+                                        grep "deploy successful" /var/log/pickipedia-deploy.log 2>/dev/null | tail -3 || echo "(no deploys found)"
+                                    '''
+
+                                    echo ""
+                                    echo "To manually run the import, SSH to maybelle host and run:"
+                                    echo "  ssh -i /root/.ssh/id_ed25519_nfs jmyles_pickipedia@ssh.nyc1.nearlyfreespeech.net \\"
+                                    echo "      'cd ~/public && php extensions/BlueRailroadIntegration/maintenance/importBlueRailroads.php'"
                                 }
                             }
-                        }
-                    }
-
-                    post {
-                        success {
-                            echo "Blue Railroad import completed successfully"
-                        }
-                        failure {
-                            echo "=== IMPORT FAILED ==="
-                            echo "Check the import script and chain-data availability"
                         }
                     }
                 }
@@ -49,5 +46,5 @@ pipelineJob('pickipedia-import-bluerailroad') {
         }
     }
 
-    // No automatic trigger - triggered by deploy script after successful pickipedia deploy
+    // No automatic trigger - runs from host deploy cron after successful pickipedia deploy
 }

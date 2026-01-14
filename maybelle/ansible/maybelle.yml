@@ -370,12 +370,14 @@
               rm -f "$MARKER_FILE"
               echo "$(date): PickiPedia deploy successful" >> "$LOG_FILE"
 
-              # Trigger Blue Railroad import job in Jenkins
-              REPORTER_PASS=$(cat /root/.jenkins_reporter_password 2>/dev/null || echo "")
-              if [ -n "$REPORTER_PASS" ]; then
-                  curl -s -X POST "http://localhost:8080/job/pickipedia-import-bluerailroad/build" \
-                      --user "reporter:${REPORTER_PASS}" || true
-                  echo "$(date): Triggered Blue Railroad import job" >> "$LOG_FILE"
+              # Run Blue Railroad import directly on NFS after successful deploy
+              echo "$(date): Running Blue Railroad import..." >> "$LOG_FILE"
+              if ssh -i /root/.ssh/id_ed25519_nfs -o StrictHostKeyChecking=no \
+                  jmyles_pickipedia@ssh.nyc1.nearlyfreespeech.net \
+                  'cd ~/public && php extensions/BlueRailroadIntegration/maintenance/importBlueRailroads.php' >> "$LOG_FILE" 2>&1; then
+                  echo "$(date): Blue Railroad import completed" >> "$LOG_FILE"
+              else
+                  echo "$(date): Blue Railroad import failed (non-fatal)" >> "$LOG_FILE"
               fi
           else
               echo "$(date): PickiPedia deploy FAILED" >> "$LOG_FILE"
