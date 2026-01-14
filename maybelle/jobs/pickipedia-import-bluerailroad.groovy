@@ -23,14 +23,14 @@ pipelineJob('pickipedia-import-bluerailroad') {
                                     echo ""
                                     echo "To check import status, review the deploy log:"
 
-                                    sh '''
+                                    sh """
                                         echo "=== Recent Import Activity ==="
                                         grep -i "blue railroad" /var/log/pickipedia-deploy.log 2>/dev/null | tail -10 || echo "(no import entries found)"
 
                                         echo ""
                                         echo "=== Last Successful Deploy ==="
                                         grep "deploy successful" /var/log/pickipedia-deploy.log 2>/dev/null | tail -3 || echo "(no deploys found)"
-                                    '''
+                                    """
 
                                     echo ""
                                     echo "To manually run the import, SSH to maybelle host and run:"
