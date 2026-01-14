@@ -7,6 +7,7 @@ import { join } from 'path';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import Hash from 'ipfs-only-hash';
+import { CID } from 'multiformats/cid';
 import { requireWalletAuth } from './auth.js';
 
 const app = express();
@@ -164,14 +165,34 @@ app.post('/pin-cid', requireWalletAuth, async (req, res) => {
   }
 });
 
+// Convert CIDv0 (Qm...) to CIDv1 (bafy...) for comparison
+function cidToV1(cidString) {
+  try {
+    const cid = CID.parse(cidString);
+    if (cid.version === 0) {
+      // Convert to CIDv1 with base32 encoding (default for v1)
+      return cid.toV1().toString();
+    }
+    return cidString;
+  } catch (e) {
+    console.warn(`CID conversion error: ${e.message}`);
+    return cidString;
+  }
+}
+
 // Check if a CID is already pinned on our Pinata account (fast database lookup)
-async function checkCidPinned(cid) {
+// Uses v3 API which requires org:files:read scope
+async function checkCidPinned(cidString) {
   if (!PINATA_JWT) {
     return false;
   }
 
+  // Convert to CIDv1 since that's what Pinata v3 API uses
+  const cidV1 = cidToV1(cidString);
+
   try {
-    const response = await fetch(`https://api.pinata.cloud/data/pinList?cid=${cid}`, {
+    // v3 API endpoint for listing files, filtered by CID
+    const response = await fetch(`https://api.pinata.cloud/v3/files/public?cid=${cidV1}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${PINATA_JWT}`
@@ -179,15 +200,15 @@ async function checkCidPinned(cid) {
     });
 
     if (!response.ok) {
-      console.warn(`Pinata pinList check failed: ${response.status}`);
+      console.warn(`Pinata v3 files check failed: ${response.status}`);
       return false;
     }
 
     const result = await response.json();
-    // If rows array has entries, the CID is already pinned
-    return result.rows && result.rows.length > 0;
+    // v3 API returns { data: { files: [...] } }
+    return result.data && result.data.files && result.data.files.length > 0;
   } catch (e) {
-    console.warn(`Pinata pinList check error: ${e.message}`);
+    console.warn(`Pinata v3 files check error: ${e.message}`);
     return false;
   }
 }
@@ -203,25 +224,30 @@ async function pinFile(filePath, filename) {
   console.log(`Computed CID: ${computedCid}`);
 
   // Step 2: Check if this CID is already pinned on our Pinata account
+  // Convert to v1 for consistent comparison and storage
+  const cidV1 = cidToV1(computedCid);
+  console.log(`CID as v1: ${cidV1}`);
+
   const alreadyPinnedOnPinata = await checkCidPinned(computedCid);
   if (alreadyPinnedOnPinata) {
     console.log(`CID already pinned on Pinata, skipping upload`);
 
-    // Still ensure it's pinned locally for redundancy
-    const locallyPinned = await checkLocalPinned(computedCid);
+    // Still ensure it's pinned locally for redundancy (use v1 CID)
+    const locallyPinned = await checkLocalPinned(cidV1);
     if (!locallyPinned) {
       console.log(`Not pinned locally, starting background pin...`);
-      pinToLocalIPFS(computedCid)
-        .then(() => console.log(`Local pin complete: ${computedCid}`))
+      pinToLocalIPFS(cidV1)
+        .then(() => console.log(`Local pin complete: ${cidV1}`))
         .catch(error => console.warn(`Local pin failed: ${error.message}`));
     } else {
       console.log(`Already pinned locally too`);
     }
 
+    // Return CIDv1 for consistency with Pinata
     return {
-      cid: computedCid,
-      ipfsUri: `ipfs://${computedCid}`,
-      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${computedCid}`,
+      cid: cidV1,
+      ipfsUri: `ipfs://${cidV1}`,
+      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${cidV1}`,
       filename,
       size: stats.size,
       alreadyPinned: true
@@ -232,9 +258,11 @@ async function pinFile(filePath, filename) {
   const pinataCid = await uploadToPinata(filePath, filename);
   console.log(`Pinata CID: ${pinataCid}`);
 
-  // Sanity check - computed CID should match Pinata's
-  if (pinataCid !== computedCid) {
-    console.warn(`CID mismatch! Computed: ${computedCid}, Pinata: ${pinataCid}`);
+  // Sanity check - computed CID should match Pinata's (compare as v1 to handle version differences)
+  const computedV1 = cidToV1(computedCid);
+  const pinataV1 = cidToV1(pinataCid);
+  if (pinataV1 !== computedV1) {
+    console.warn(`CID mismatch! Computed: ${computedCid} (v1: ${computedV1}), Pinata: ${pinataCid}`);
   }
 
   // Step 4: Pin to local IPFS node for redundancy (fire and forget)
