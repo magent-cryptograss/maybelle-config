@@ -203,9 +203,21 @@ async function pinFile(filePath, filename) {
   console.log(`Computed CID: ${computedCid}`);
 
   // Step 2: Check if this CID is already pinned on our Pinata account
-  const alreadyPinned = await checkCidPinned(computedCid);
-  if (alreadyPinned) {
-    console.log(`CID already exists on IPFS, skipping upload`);
+  const alreadyPinnedOnPinata = await checkCidPinned(computedCid);
+  if (alreadyPinnedOnPinata) {
+    console.log(`CID already pinned on Pinata, skipping upload`);
+
+    // Still ensure it's pinned locally for redundancy
+    const locallyPinned = await checkLocalPinned(computedCid);
+    if (!locallyPinned) {
+      console.log(`Not pinned locally, starting background pin...`);
+      pinToLocalIPFS(computedCid)
+        .then(() => console.log(`Local pin complete: ${computedCid}`))
+        .catch(error => console.warn(`Local pin failed: ${error.message}`));
+    } else {
+      console.log(`Already pinned locally too`);
+    }
+
     return {
       cid: computedCid,
       ipfsUri: `ipfs://${computedCid}`,
@@ -280,6 +292,26 @@ async function uploadToPinata(filePath, filename) {
   const result = await response.json();
   // v3 API returns the CID in data.cid
   return result.data.cid;
+}
+
+// Check if a CID is already pinned on local IPFS node
+async function checkLocalPinned(cid) {
+  try {
+    const response = await fetch(`${IPFS_API_URL}/api/v0/pin/ls?arg=${cid}&type=recursive`, {
+      method: 'POST'
+    });
+
+    if (!response.ok) {
+      // 500 error with "not pinned" message means it's not pinned
+      return false;
+    }
+
+    const result = await response.json();
+    // If Keys object has our CID, it's pinned
+    return result.Keys && Object.keys(result.Keys).length > 0;
+  } catch (e) {
+    return false;
+  }
 }
 
 // Pin CID to local IPFS node with progress logging
