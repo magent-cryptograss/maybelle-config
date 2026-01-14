@@ -2,10 +2,11 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { execSync, spawn } from 'child_process';
-import { createReadStream, statSync, unlinkSync, existsSync } from 'fs';
+import { createReadStream, readFileSync, statSync, unlinkSync, existsSync } from 'fs';
 import { join } from 'path';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
+import Hash from 'ipfs-only-hash';
 import { requireWalletAuth } from './auth.js';
 
 const app = express();
@@ -163,16 +164,53 @@ app.post('/pin-cid', requireWalletAuth, async (req, res) => {
   }
 });
 
-// Main pinning function - uploads to Pinata and pins locally
+// Check if a CID is already accessible on IPFS via gateway
+async function checkCidExists(cid) {
+  try {
+    const response = await fetch(`https://gateway.pinata.cloud/ipfs/${cid}`, {
+      method: 'HEAD',
+      timeout: 10000
+    });
+    return response.ok;
+  } catch (e) {
+    return false;
+  }
+}
+
+// Main pinning function - uploads to Pinata and pins locally (idempotent)
 async function pinFile(filePath, filename) {
   const stats = statSync(filePath);
   console.log(`Pinning file: ${filename} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
 
-  // Step 1: Upload to Pinata
+  // Step 1: Compute CID from file content
+  const fileBuffer = readFileSync(filePath);
+  const computedCid = await Hash.of(fileBuffer);
+  console.log(`Computed CID: ${computedCid}`);
+
+  // Step 2: Check if this CID already exists on IPFS
+  const alreadyPinned = await checkCidExists(computedCid);
+  if (alreadyPinned) {
+    console.log(`CID already exists on IPFS, skipping upload`);
+    return {
+      cid: computedCid,
+      ipfsUri: `ipfs://${computedCid}`,
+      gatewayUrl: `https://gateway.pinata.cloud/ipfs/${computedCid}`,
+      filename,
+      size: stats.size,
+      alreadyPinned: true
+    };
+  }
+
+  // Step 3: Upload to Pinata
   const pinataCid = await uploadToPinata(filePath, filename);
   console.log(`Pinata CID: ${pinataCid}`);
 
-  // Step 2: Pin to local IPFS node for redundancy (fire and forget)
+  // Sanity check - computed CID should match Pinata's
+  if (pinataCid !== computedCid) {
+    console.warn(`CID mismatch! Computed: ${computedCid}, Pinata: ${pinataCid}`);
+  }
+
+  // Step 4: Pin to local IPFS node for redundancy (fire and forget)
   // Local pinning can take a long time for large files, so we don't block on it
   console.log(`Starting local IPFS pin (background)...`);
   pinToLocalIPFS(pinataCid)
@@ -185,7 +223,7 @@ async function pinFile(filePath, filename) {
     gatewayUrl: `https://gateway.pinata.cloud/ipfs/${pinataCid}`,
     filename,
     size: stats.size,
-    locallyPinned: 'pending'  // Now async, so we don't know yet
+    alreadyPinned: false
   };
 }
 
