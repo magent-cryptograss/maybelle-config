@@ -34,8 +34,8 @@ pipelineJob('pickipedia-import-bluerailroad') {
 
                                     echo ""
                                     echo "To manually run the import, SSH to maybelle host and run:"
-                                    echo "  ssh -i /root/.ssh/id_ed25519_nfs jmyles_pickipedia@ssh.nyc1.nearlyfreespeech.net \\"
-                                    echo "      'cd ~/public && php extensions/BlueRailroadIntegration/maintenance/importBlueRailroads.php'"
+                                    echo "  ssh -i /root/.ssh/id_ed25519_nfs jmyles_pickipedia@ssh.nyc1.nearlyfreespeech.net"
+                                    echo "      cd ~/public && php extensions/BlueRailroadIntegration/maintenance/importBlueRailroads.php"
                                 }
                             }
                         }
