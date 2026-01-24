@@ -931,6 +931,7 @@
                 DEFAULT_FROM_EMAIL: glitchtip@cryptograss.live
                 EMAIL_URL: "consolemail://"
                 ENABLE_OPEN_USER_REGISTRATION: "True"
+                GLITCHTIP_MAX_EVENT_LIFE_DAYS: "14"
               networks:
                 - glitchtip-net
               restart: unless-stopped
@@ -947,6 +948,7 @@
                 REDIS_URL: redis://redis:6379/0
                 SECRET_KEY: {{ glitchtip_secret_key }}
                 GLITCHTIP_DOMAIN: https://glitchtip.maybelle.cryptograss.live
+                GLITCHTIP_MAX_EVENT_LIFE_DAYS: "14"
               networks:
                 - glitchtip-net
               restart: unless-stopped
