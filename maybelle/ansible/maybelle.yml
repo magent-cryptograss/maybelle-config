@@ -15,6 +15,9 @@
     github_repo_url: "https://github.com/cryptograss/justinholmes.com" # TODO: make this dynamic?  Certainly it will change with the repo rename.
     jenkins_home: "/var/jenkins_home"
     caddy_config_type: "maybelle"  # Use maybelle-specific Caddyfile template
+    # Pinning service authorized wallets - loaded from JSON config (not vault)
+    authorized_wallets_config: "{{ lookup('file', playbook_dir + '/../pinning-service/authorized-wallets.json') | from_json }}"
+    pinning_authorized_wallets: "{{ authorized_wallets_config.wallets | map(attribute='address') | join(',') }}"
 
   pre_tasks:
     - name: Install community.docker collection

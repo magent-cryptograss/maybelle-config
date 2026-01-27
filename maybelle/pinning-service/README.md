@@ -62,7 +62,27 @@ curl -X POST https://pinning.maybelle.cryptograss.live/pin-cid \
 ### GET /health
 Health check (no auth required).
 
-## Vault Variables Required
+## Configuration
+
+### Authorized Wallets
+
+Edit `authorized-wallets.json` in this directory to add/remove wallets:
+
+```json
+{
+  "description": "Wallets authorized to use the Blue Railroad pinning service",
+  "wallets": [
+    {
+      "address": "0x067acE39FbBFd3c3f7ceF9ED77590383345994Fe",
+      "note": "Justin's wallet"
+    }
+  ]
+}
+```
+
+The ansible playbook reads this file and passes the addresses to the container.
+
+### Vault Variables Required
 
 Add these to `secrets/vault.yml`:
 
@@ -70,11 +90,6 @@ Add these to `secrets/vault.yml`:
 # Pinata IPFS pinning service JWT
 # Get from https://app.pinata.cloud/keys - create an API key with "write files" permission
 pinata_jwt: "your-pinata-jwt-token"
-
-# Comma-separated list of wallet addresses authorized to use the pinning service
-# Typically the Blue Railroad contract owner
-# IMPORTANT: Must be quoted as a string to preserve hex format
-pinning_authorized_wallets: "0x4f84b3650dbf651732a41647618e7ff94a633f09"
 ```
 
 ## Storage

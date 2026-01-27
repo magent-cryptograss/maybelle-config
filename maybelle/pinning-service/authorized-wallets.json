@@ -1,0 +1,9 @@
+{
+  "description": "Wallets authorized to use the Blue Railroad pinning service",
+  "wallets": [
+    {
+      "address": "0x067acE39FbBFd3c3f7ceF9ED77590383345994Fe",
+      "note": "Justin's wallet"
+    }
+  ]
+}
