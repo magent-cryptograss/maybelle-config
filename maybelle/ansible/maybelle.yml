@@ -181,6 +181,19 @@
       register: pip_update
       changed_when: "'Successfully installed' in pip_update.stdout"
 
+    # Generate bcrypt hash for IPFS admin password at deploy time
+    # This keeps vault simple (plaintext) while Caddyfile gets proper hash
+    - name: Hash IPFS admin password for Caddy basicauth
+      command: docker run --rm caddy caddy hash-password --plaintext '{{ maybelle_ipfs_admin_password }}'
+      register: ipfs_password_hash_result
+      changed_when: false
+      no_log: true  # Don't log the password
+
+    - name: Set IPFS admin password hash variable
+      set_fact:
+        ipfs_admin_password_hash: "{{ ipfs_password_hash_result.stdout }}"
+      no_log: true
+
     - name: Configure Caddy reverse proxy
       include_role:
         name: caddy
