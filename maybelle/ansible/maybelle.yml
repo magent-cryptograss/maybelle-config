@@ -1129,47 +1129,95 @@
       retries: 30
       delay: 2
 
-    # Configure IPFS gateway to only serve pinned content (NoFetch mode)
-    # This prevents the gateway from fetching arbitrary content from the IPFS network
-    # Note: We must stop the container first because the daemon holds a repo lock
+    # Pin IPFS WebUI before enabling NoFetch mode
+    # The WebUI is served from IPFS itself, so we need it pinned locally
+    - name: Check if IPFS WebUI is already pinned
+      command: docker exec ipfs ipfs pin ls --type=recursive /ipfs/bafybeidsjptidvb6wf6benznq2pxgnt5iyksgtecpmjoimlmswhtx2u5ua
+      register: webui_pin_check
+      changed_when: false
+      failed_when: false
+
     - name: Check current IPFS Gateway NoFetch setting
       command: docker exec ipfs ipfs config Gateway.NoFetch
       register: ipfs_nofetch_check
       changed_when: false
       failed_when: false
 
-    - name: Stop IPFS container for config change
-      command: docker stop ipfs
-      when: ipfs_nofetch_check.stdout != 'true'
+    # If WebUI not pinned and NoFetch is enabled, temporarily disable to allow fetch
+    - name: Temporarily disable NoFetch to pin WebUI
+      block:
+        - name: Stop IPFS for config change (disable NoFetch)
+          command: docker stop ipfs
 
-    - name: Remove stale IPFS repo lock (left over after container stop)
+        - name: Remove stale repo lock
+          file:
+            path: /mnt/persist/ipfs/data/repo.lock
+            state: absent
+
+        - name: Disable NoFetch temporarily
+          command: >
+            docker run --rm
+            -v /mnt/persist/ipfs/data:/data/ipfs
+            ipfs/kubo:latest
+            config --json Gateway.NoFetch false
+
+        - name: Start IPFS after disabling NoFetch
+          command: docker start ipfs
+
+        - name: Wait for IPFS to be ready
+          uri:
+            url: http://127.0.0.1:5001/api/v0/id
+            method: POST
+            status_code: [200]
+          register: ipfs_temp_health
+          until: ipfs_temp_health.status == 200
+          retries: 30
+          delay: 2
+      when: webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true'
+
+    - name: Pin IPFS WebUI
+      command: docker exec ipfs ipfs pin add --progress --name ipfs-webui /ipfs/bafybeidsjptidvb6wf6benznq2pxgnt5iyksgtecpmjoimlmswhtx2u5ua
+      register: webui_pin_result
+      when: webui_pin_check.rc != 0
+      # This can take a while on first run as it fetches from the network
+      async: 300
+      poll: 10
+
+    # Configure IPFS gateway to only serve pinned content (NoFetch mode)
+    # This prevents the gateway from fetching arbitrary content from the IPFS network
+    # Note: We must stop the container first because the daemon holds a repo lock
+    - name: Stop IPFS container for NoFetch config
+      command: docker stop ipfs
+      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
+
+    - name: Remove stale IPFS repo lock
       file:
         path: /mnt/persist/ipfs/data/repo.lock
         state: absent
-      when: ipfs_nofetch_check.stdout != 'true'
+      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
 
-    - name: Configure IPFS Gateway NoFetch mode (container stopped)
+    - name: Configure IPFS Gateway NoFetch mode
       command: >
         docker run --rm
         -v /mnt/persist/ipfs/data:/data/ipfs
         ipfs/kubo:latest
         config --json Gateway.NoFetch true
-      when: ipfs_nofetch_check.stdout != 'true'
+      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
 
-    - name: Start IPFS container after config change
+    - name: Start IPFS container after config
       command: docker start ipfs
-      when: ipfs_nofetch_check.stdout != 'true'
+      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
 
-    - name: Wait for IPFS to be ready after config change
+    - name: Wait for IPFS to be ready
       uri:
         url: http://127.0.0.1:5001/api/v0/id
         method: POST
         status_code: [200]
-      register: ipfs_restart_health
-      until: ipfs_restart_health.status == 200
+      register: ipfs_final_health
+      until: ipfs_final_health.status == 200
       retries: 30
       delay: 2
-      when: ipfs_nofetch_check.stdout != 'true'
+      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
 
   handlers:
     - name: Restart Jenkins container
