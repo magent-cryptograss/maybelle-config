@@ -1143,6 +1143,17 @@
       changed_when: false
       failed_when: false
 
+    - name: Check if IPFS API CORS is configured
+      command: docker exec ipfs ipfs config API.HTTPHeaders.Access-Control-Allow-Origin
+      register: ipfs_cors_check
+      changed_when: false
+      failed_when: false
+
+    # Determine if we need to reconfigure IPFS
+    - name: Set IPFS reconfiguration flag
+      set_fact:
+        ipfs_needs_reconfig: "{{ ipfs_nofetch_check.stdout != 'true' or webui_pin_check.rc != 0 or 'ipfs-admin' not in (ipfs_cors_check.stdout | default('')) }}"
+
     # If WebUI not pinned and NoFetch is enabled, temporarily disable to allow fetch
     - name: Temporarily disable NoFetch to pin WebUI
       block:
@@ -1173,7 +1184,7 @@
           until: ipfs_temp_health.status == 200
           retries: 30
           delay: 2
-      when: webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true'
+      when: webui_pin_check.rc != 0 and (ipfs_nofetch_check.stdout == 'true' or 'ipfs-admin' not in (ipfs_cors_check.stdout | default('')))
 
     - name: Pin IPFS WebUI
       command: docker exec ipfs ipfs pin add --progress --name ipfs-webui /ipfs/bafybeidsjptidvb6wf6benznq2pxgnt5iyksgtecpmjoimlmswhtx2u5ua
@@ -1188,13 +1199,13 @@
     # Note: We must stop the container first because the daemon holds a repo lock
     - name: Stop IPFS container for NoFetch config
       command: docker stop ipfs
-      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
+      when: ipfs_needs_reconfig
 
     - name: Remove stale IPFS repo lock
       file:
         path: /mnt/persist/ipfs/data/repo.lock
         state: absent
-      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
+      when: ipfs_needs_reconfig
 
     - name: Configure IPFS Gateway NoFetch mode
       command: >
@@ -1202,11 +1213,28 @@
         -v /mnt/persist/ipfs/data:/data/ipfs
         ipfs/kubo:latest
         config --json Gateway.NoFetch true
-      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
+      when: ipfs_needs_reconfig
+
+    # Configure CORS for WebUI access via ipfs-admin subdomain
+    - name: Configure IPFS API CORS origins
+      command: >
+        docker run --rm
+        -v /mnt/persist/ipfs/data:/data/ipfs
+        ipfs/kubo:latest
+        config --json API.HTTPHeaders.Access-Control-Allow-Origin '["https://ipfs-admin.{{ domain_name }}", "http://localhost:5001", "http://127.0.0.1:5001"]'
+      when: ipfs_needs_reconfig
+
+    - name: Configure IPFS API CORS methods
+      command: >
+        docker run --rm
+        -v /mnt/persist/ipfs/data:/data/ipfs
+        ipfs/kubo:latest
+        config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "POST", "GET"]'
+      when: ipfs_needs_reconfig
 
     - name: Start IPFS container after config
       command: docker start ipfs
-      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
+      when: ipfs_needs_reconfig
 
     - name: Wait for IPFS to be ready
       uri:
@@ -1217,7 +1245,7 @@
       until: ipfs_final_health.status == 200
       retries: 30
       delay: 2
-      when: ipfs_nofetch_check.stdout != 'true' or (webui_pin_check.rc != 0 and ipfs_nofetch_check.stdout == 'true')
+      when: ipfs_needs_reconfig
 
   handlers:
     - name: Restart Jenkins container
