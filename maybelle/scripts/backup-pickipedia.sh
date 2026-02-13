@@ -48,8 +48,9 @@ if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${VPS_HOST}" \
 
     # Use rsync with find to only grab files modified in last 7 days
     # This keeps the backup small while protecting recent uploads
+    # Exclude temp/ directory - it's just transient upload/thumbnail processing
     if ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "root@${VPS_HOST}" \
-        "find /var/www/pickipedia/images -type f -mtime -7 -print0" 2>/dev/null \
+        "find /var/www/pickipedia/images -type f -mtime -7 -not -path '*/temp/*' -print0" 2>/dev/null \
         | rsync -avz --files-from=- --from0 -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no" \
         "root@${VPS_HOST}:/" "$IMAGES_BACKUP_DIR/" >> "$LOG_FILE" 2>&1; then
         RECENT_COUNT=$(find "$IMAGES_BACKUP_DIR" -type f -mtime -7 2>/dev/null | wc -l)
