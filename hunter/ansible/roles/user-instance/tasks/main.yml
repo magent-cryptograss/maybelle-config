@@ -135,6 +135,7 @@
       ALCHEMY_API_KEY={{ ALCHEMY_API_KEY }}
       INFURA_API_KEY={{ INFURA_API_KEY }}
       DISCORD_BOT_TOKEN={{ DISCORD_BOT_TOKEN }}
+      PINATA_JWT={{ pinata_jwt }}
     dest: "{{ base_dir }}/{{ user.name }}/home/workspace/arthel/.env"
     owner: 1000
     group: 1000
