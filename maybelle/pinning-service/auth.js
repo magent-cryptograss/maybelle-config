@@ -2,7 +2,7 @@ import { verifyMessage } from 'viem';
 
 // Message format: "Authorize Blue Railroad pinning\nTimestamp: {timestamp}"
 // Timestamp must be within 5 minutes of server time to prevent replay attacks
-const MAX_TIMESTAMP_DRIFT_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_TIMESTAMP_DRIFT_MS = 10 * 60 * 1000; // 10 minutes
 
 // Authorized wallets - can be contract owner or allowlisted addresses
 // Loaded from environment variable as comma-separated list
