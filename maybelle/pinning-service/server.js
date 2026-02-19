@@ -73,6 +73,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Server time endpoint - clients use this for auth timestamps to avoid clock drift issues
+app.get('/time', (req, res) => {
+  res.json({ timestamp: Date.now() });
+});
+
 // Always transcode videos to web-friendly VP9/WebM
 // - VP9 is royalty-free (unlike H.264) with excellent browser support
 // - Converts any codec (MJPEG, etc.) to efficient VP9
