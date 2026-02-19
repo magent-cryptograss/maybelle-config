@@ -62,6 +62,12 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 } // 500MB max
 });
 
+// Separate upload handler for large videos (10GB limit)
+const videoUpload = multer({
+  dest: STAGING_DIR,
+  limits: { fileSize: 10 * 1024 * 1024 * 1024 } // 10GB max
+});
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
@@ -559,7 +565,7 @@ async function pinToLocalIPFS(cid) {
 
 // HLS transcoding and pinning endpoint
 // Accepts video file, transcodes to multiple quality tiers, pins HLS directory
-app.post('/transcode-video', requireWalletAuth, upload.fields([
+app.post('/transcode-video', requireWalletAuth, videoUpload.fields([
   { name: 'video', maxCount: 1 },
   { name: 'subtitle', maxCount: 1 }
 ]), async (req, res) => {
