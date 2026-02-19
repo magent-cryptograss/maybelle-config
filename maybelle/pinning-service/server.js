@@ -2,7 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
 import { execSync, spawn } from 'child_process';
-import { createReadStream, readFileSync, statSync, unlinkSync, existsSync } from 'fs';
+import { createReadStream, readFileSync, statSync, unlinkSync, existsSync, writeFileSync, readdirSync, copyFileSync } from 'fs';
 import { join } from 'path';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
@@ -556,6 +556,305 @@ async function pinToLocalIPFS(cid) {
   // Return the last line which should be the final result
   return JSON.parse(lines[lines.length - 1]);
 }
+
+// HLS transcoding and pinning endpoint
+// Accepts video file, transcodes to multiple quality tiers, pins HLS directory
+app.post('/transcode-video', requireWalletAuth, upload.fields([
+  { name: 'video', maxCount: 1 },
+  { name: 'subtitle', maxCount: 1 }
+]), async (req, res) => {
+  // SSE headers for streaming progress
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  const sendProgress = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const sendError = (message) => {
+    sendProgress({ stage: 'error', message });
+    res.end();
+  };
+
+  if (!req.files?.video?.[0]) {
+    return sendError('No video file uploaded');
+  }
+
+  const videoFile = req.files.video[0];
+  const subtitleFile = req.files.subtitle?.[0];
+
+  let qualities;
+  try {
+    qualities = JSON.parse(req.body.qualities || '[720, 480]');
+  } catch (e) {
+    qualities = [720, 480];
+  }
+  const keepOriginal = req.body.keepOriginal === 'true';
+
+  const hlsDir = join(STAGING_DIR, `hls-${Date.now()}`);
+
+  try {
+    sendProgress({ stage: 'starting', message: 'Starting video processing...', progress: 5 });
+
+    // Create HLS output directory
+    execSync(`mkdir -p "${hlsDir}"`);
+
+    // Get video info
+    sendProgress({ stage: 'analyzing', message: 'Analyzing video...', progress: 8 });
+    let videoInfo;
+    try {
+      const probeResult = execSync(
+        `ffprobe -v quiet -print_format json -show_streams -show_format "${videoFile.path}"`,
+        { encoding: 'utf8' }
+      );
+      videoInfo = JSON.parse(probeResult);
+    } catch (e) {
+      console.warn('Could not probe video:', e.message);
+      videoInfo = { streams: [] };
+    }
+
+    const videoStream = videoInfo.streams?.find(s => s.codec_type === 'video');
+    const sourceHeight = videoStream?.height || 1080;
+    const sourceWidth = videoStream?.width || 1920;
+
+    // Filter qualities to not upscale
+    const validQualities = qualities.filter(q => q <= sourceHeight).sort((a, b) => b - a);
+    if (validQualities.length === 0) {
+      validQualities.push(Math.min(...qualities)); // Use lowest requested if source is smaller
+    }
+
+    sendProgress({
+      stage: 'transcoding',
+      message: `Transcoding to ${validQualities.join('p, ')}p...`,
+      details: `Source: ${sourceWidth}x${sourceHeight}`,
+      progress: 10
+    });
+
+    // Build FFmpeg command for HLS output
+    // Using H.264 for maximum compatibility
+    const ffmpegArgs = ['-i', videoFile.path, '-y'];
+
+    // Build filter complex for scaling
+    if (validQualities.length > 1) {
+      const splits = validQualities.map((q, i) => `[v${i}]`).join('');
+      let filterComplex = `[0:v]split=${validQualities.length}${splits}`;
+      validQualities.forEach((q, i) => {
+        filterComplex += `;[v${i}]scale=-2:${q}[v${i}out]`;
+      });
+      ffmpegArgs.push('-filter_complex', filterComplex);
+    }
+
+    // Add output for each quality
+    validQualities.forEach((q, i) => {
+      const crf = q >= 1080 ? 20 : q >= 720 ? 23 : 26;
+      const audioBitrate = q >= 720 ? '128k' : '96k';
+
+      if (validQualities.length > 1) {
+        ffmpegArgs.push('-map', `[v${i}out]`);
+      } else {
+        ffmpegArgs.push('-map', '0:v');
+        ffmpegArgs.push('-vf', `scale=-2:${q}`);
+      }
+      ffmpegArgs.push('-map', '0:a?'); // ? means optional (video might not have audio)
+      ffmpegArgs.push(
+        '-c:v', 'libx264',
+        '-preset', 'fast',
+        '-crf', crf.toString(),
+        '-c:a', 'aac',
+        '-b:a', audioBitrate,
+        '-f', 'hls',
+        '-hls_time', '6',
+        '-hls_playlist_type', 'vod',
+        '-hls_segment_filename', join(hlsDir, `${q}p_%03d.ts`),
+        join(hlsDir, `${q}p.m3u8`)
+      );
+    });
+
+    // Run FFmpeg with progress
+    console.log('FFmpeg command:', 'ffmpeg', ffmpegArgs.join(' '));
+
+    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
+
+    let lastProgress = 10;
+    ffmpeg.stderr.on('data', (data) => {
+      const line = data.toString();
+      // Parse FFmpeg progress
+      const timeMatch = line.match(/time=(\d+):(\d+):(\d+)/);
+      if (timeMatch) {
+        const duration = videoInfo.format?.duration || 300;
+        const currentTime = parseInt(timeMatch[1]) * 3600 + parseInt(timeMatch[2]) * 60 + parseInt(timeMatch[3]);
+        const progress = Math.min(80, 10 + (currentTime / duration) * 70);
+        if (progress > lastProgress + 2) {
+          lastProgress = progress;
+          sendProgress({
+            stage: 'transcoding',
+            message: `Transcoding... ${Math.round(currentTime)}s processed`,
+            progress: Math.round(progress)
+          });
+        }
+      }
+    });
+
+    await new Promise((resolve, reject) => {
+      ffmpeg.on('close', (code) => {
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg exited with code ${code}`));
+      });
+      ffmpeg.on('error', reject);
+    });
+
+    sendProgress({ stage: 'transcoded', message: 'Transcoding complete', progress: 80 });
+
+    // Create master playlist
+    sendProgress({ stage: 'packaging', message: 'Creating master playlist...', progress: 82 });
+
+    let masterPlaylist = '#EXTM3U\n#EXT-X-VERSION:3\n';
+    for (const q of validQualities) {
+      const bandwidth = q >= 1080 ? 5000000 : q >= 720 ? 2500000 : 1000000;
+      const width = Math.round(sourceWidth * (q / sourceHeight));
+      masterPlaylist += `#EXT-X-STREAM-INF:BANDWIDTH=${bandwidth},RESOLUTION=${width}x${q}\n`;
+      masterPlaylist += `${q}p.m3u8\n`;
+    }
+
+    writeFileSync(join(hlsDir, 'master.m3u8'), masterPlaylist);
+
+    // Copy subtitle if provided
+    let hasSubtitles = false;
+    if (subtitleFile) {
+      copyFileSync(subtitleFile.path, join(hlsDir, 'subtitles.vtt'));
+      hasSubtitles = true;
+      sendProgress({ stage: 'subtitles', message: 'Added subtitles', progress: 84 });
+    }
+
+    // Pin original if requested
+    let originalCid = null;
+    if (keepOriginal) {
+      sendProgress({ stage: 'pinning-original', message: 'Pinning original file...', progress: 85 });
+      try {
+        const origResult = await pinFile(videoFile.path, videoFile.originalname);
+        originalCid = origResult.cid;
+      } catch (e) {
+        console.warn('Failed to pin original:', e.message);
+      }
+    }
+
+    // Pin HLS directory to IPFS
+    sendProgress({ stage: 'pinning', message: 'Pinning HLS directory to IPFS...', progress: 88 });
+
+    // Add directory to local IPFS node using multipart form
+    // We need to add each file with its path relative to the directory
+    const files = readdirSync(hlsDir);
+    const form = new FormData();
+
+    for (const filename of files) {
+      const filePath = join(hlsDir, filename);
+      form.append('file', createReadStream(filePath), {
+        filepath: filename  // This sets the path in the directory
+      });
+    }
+
+    const addResponse = await fetch(`${IPFS_API_URL}/api/v0/add?recursive=true&wrap-with-directory=true&pin=true`, {
+      method: 'POST',
+      body: form
+    });
+
+    if (!addResponse.ok) {
+      throw new Error(`IPFS add failed: ${addResponse.status}`);
+    }
+
+    const addResult = await addResponse.text();
+
+    // Parse the directory add result (returns multiple lines, last one is the root wrapper)
+    const addLines = addResult.trim().split('\n');
+    let rootCid = null;
+    let totalSize = 0;
+
+    for (const line of addLines) {
+      try {
+        const item = JSON.parse(line);
+        totalSize += parseInt(item.Size || 0);
+        // The last entry is the wrapper directory
+        rootCid = item.Hash;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    if (!rootCid) {
+      throw new Error('Could not determine root CID from IPFS add');
+    }
+
+    sendProgress({ stage: 'pinning-pinata', message: 'Pinning to Pinata...', progress: 92 });
+
+    // Pin the root CID to Pinata for persistence
+    // Note: Pinata will fetch from our local node
+    try {
+      const pinataResponse = await fetch('https://api.pinata.cloud/pinning/pinByHash', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${PINATA_JWT}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          hashToPin: rootCid,
+          pinataMetadata: {
+            name: `hls-${videoFile.originalname}`,
+            keyvalues: {
+              source: 'blue-railroad-video',
+              qualities: validQualities.join(','),
+              timestamp: new Date().toISOString()
+            }
+          }
+        })
+      });
+
+      if (!pinataResponse.ok) {
+        console.warn('Pinata pin by hash failed:', await pinataResponse.text());
+      }
+    } catch (e) {
+      console.warn('Pinata pinning failed:', e.message);
+    }
+
+    sendProgress({ stage: 'cleanup', message: 'Cleaning up...', progress: 98 });
+
+    // Cleanup
+    try {
+      execSync(`rm -rf "${hlsDir}"`);
+      unlinkSync(videoFile.path);
+      if (subtitleFile) unlinkSync(subtitleFile.path);
+    } catch (e) {
+      console.warn('Cleanup error:', e.message);
+    }
+
+    // Send final result
+    sendProgress({
+      stage: 'complete',
+      message: 'Video ready!',
+      progress: 100,
+      cid: rootCid,
+      qualities: validQualities,
+      totalSize,
+      hasSubtitles,
+      originalCid,
+      masterPlaylist: `${IPFS_GATEWAY_URL}/ipfs/${rootCid}/master.m3u8`
+    });
+
+    res.end();
+
+  } catch (error) {
+    console.error('Transcode error:', error);
+
+    // Cleanup on error
+    try {
+      execSync(`rm -rf "${hlsDir}"`);
+      if (videoFile?.path) unlinkSync(videoFile.path);
+      if (subtitleFile?.path) unlinkSync(subtitleFile.path);
+    } catch (e) { /* ignore */ }
+
+    sendError(error.message || 'Transcoding failed');
+  }
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Blue Railroad Pinning Service listening on port ${PORT}`);
