@@ -55,6 +55,9 @@ const IPFS_API_URL = process.env.IPFS_API_URL || 'http://ipfs:5001';
 const IPFS_GATEWAY_URL = process.env.IPFS_GATEWAY_URL || 'https://ipfs.maybelle.cryptograss.live';
 const STAGING_DIR = process.env.STAGING_DIR || '/staging';
 const AUTHORIZED_WALLETS = process.env.AUTHORIZED_WALLETS || '';
+const COCONUT_API_KEY = process.env.COCONUT_API_KEY;
+const JOBS_DIR = process.env.JOBS_DIR || join(STAGING_DIR, 'jobs');
+const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL || 'https://pinning.maybelle.cryptograss.live';
 
 // File upload handling
 const upload = multer({
@@ -867,9 +870,370 @@ app.post('/transcode-video', requireWalletAuth, videoUpload.fields([
   }
 });
 
+// ===========================================
+// Coconut.co Cloud Transcoding Integration
+// ===========================================
+
+// Ensure jobs directory exists
+try {
+  execSync(`mkdir -p "${JOBS_DIR}"`);
+} catch (e) {
+  console.warn('Could not create jobs directory:', e.message);
+}
+
+// Helper to save/load job state
+function saveJob(jobId, data) {
+  writeFileSync(join(JOBS_DIR, `${jobId}.json`), JSON.stringify(data, null, 2));
+}
+
+function loadJob(jobId) {
+  const path = join(JOBS_DIR, `${jobId}.json`);
+  if (!existsSync(path)) return null;
+  return JSON.parse(readFileSync(path, 'utf8'));
+}
+
+// Submit video to Coconut for AV1 HLS transcoding
+app.post('/transcode-coconut', requireWalletAuth, videoUpload.single('video'), async (req, res) => {
+  if (!COCONUT_API_KEY) {
+    return res.status(500).json({ error: 'Coconut API not configured' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No video file uploaded' });
+  }
+
+  const videoFile = req.file;
+  const jobId = `coconut-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+  try {
+    // Parse options
+    let qualities;
+    try {
+      qualities = JSON.parse(req.body.qualities || '[720, 480]');
+    } catch (e) {
+      qualities = [720, 480];
+    }
+    const keepOriginal = req.body.keepOriginal === 'true';
+
+    // First, pin the source video to IPFS so Coconut can fetch it
+    console.log(`[${jobId}] Pinning source video to IPFS...`);
+
+    const form = new FormData();
+    form.append('file', createReadStream(videoFile.path), {
+      filename: videoFile.originalname || 'video.mp4'
+    });
+
+    const addResponse = await fetch(`${IPFS_API_URL}/api/v0/add?pin=true`, {
+      method: 'POST',
+      body: form
+    });
+
+    if (!addResponse.ok) {
+      throw new Error(`Failed to pin source video: ${addResponse.statusText}`);
+    }
+
+    const addResult = await addResponse.json();
+    const sourceCid = addResult.Hash;
+    const sourceUrl = `${IPFS_GATEWAY_URL}/ipfs/${sourceCid}`;
+
+    console.log(`[${jobId}] Source pinned: ${sourceCid}`);
+
+    // Build Coconut job config
+    // Using AV1 codec for better compression, HLS format for streaming
+    const outputs = {};
+
+    qualities.forEach(q => {
+      const key = `hls_av1_${q}p`;
+      outputs[key] = {
+        path: `/output/${q}p/playlist.m3u8`,
+        video: {
+          codec: 'av1',
+          height: q,
+          bitrate: q >= 1080 ? '4000k' : q >= 720 ? '2000k' : '1000k'
+        },
+        audio: {
+          codec: 'opus',
+          bitrate: '128k'
+        },
+        hls: {
+          segment_duration: 6
+        }
+      };
+    });
+
+    // Add master playlist
+    outputs['hls_master'] = {
+      path: '/output/master.m3u8',
+      hls: {
+        master: true,
+        variants: qualities.map(q => `hls_av1_${q}p`)
+      }
+    };
+
+    const coconutJob = {
+      input: { url: sourceUrl },
+      outputs: outputs,
+      webhook: `${WEBHOOK_BASE_URL}/webhook/coconut?job_id=${jobId}`
+    };
+
+    console.log(`[${jobId}] Submitting to Coconut...`);
+
+    const coconutResponse = await fetch('https://api.coconut.co/v2/jobs', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${COCONUT_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(coconutJob)
+    });
+
+    if (!coconutResponse.ok) {
+      const errText = await coconutResponse.text();
+      throw new Error(`Coconut API error: ${coconutResponse.status} - ${errText}`);
+    }
+
+    const coconutResult = await coconutResponse.json();
+
+    console.log(`[${jobId}] Coconut job created: ${coconutResult.id}`);
+
+    // Save job state
+    const jobState = {
+      id: jobId,
+      coconutJobId: coconutResult.id,
+      status: 'processing',
+      sourceCid: sourceCid,
+      qualities: qualities,
+      keepOriginal: keepOriginal,
+      createdAt: new Date().toISOString(),
+      verifiedAddress: req.verifiedAddress
+    };
+    saveJob(jobId, jobState);
+
+    // Clean up temp file
+    try { unlinkSync(videoFile.path); } catch (e) { /* ignore */ }
+
+    res.json({
+      jobId: jobId,
+      coconutJobId: coconutResult.id,
+      status: 'processing',
+      sourceCid: sourceCid,
+      message: 'Video submitted for transcoding. Check /job/:id for status.'
+    });
+
+  } catch (error) {
+    console.error(`[${jobId}] Error:`, error);
+    try { unlinkSync(videoFile.path); } catch (e) { /* ignore */ }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Webhook endpoint for Coconut completion notifications
+app.post('/webhook/coconut', express.json(), async (req, res) => {
+  const jobId = req.query.job_id;
+  const event = req.body;
+
+  console.log(`[${jobId}] Coconut webhook:`, event.event);
+
+  if (!jobId) {
+    return res.status(400).json({ error: 'Missing job_id' });
+  }
+
+  const job = loadJob(jobId);
+  if (!job) {
+    console.error(`[${jobId}] Job not found`);
+    return res.status(404).json({ error: 'Job not found' });
+  }
+
+  try {
+    if (event.event === 'job.completed') {
+      console.log(`[${jobId}] Transcoding complete, fetching outputs...`);
+
+      // Download all HLS outputs and pin to IPFS
+      const hlsDir = join(STAGING_DIR, `hls-${jobId}`);
+      execSync(`mkdir -p "${hlsDir}"`);
+
+      // Coconut provides output URLs in the event
+      const outputs = event.outputs || {};
+
+      for (const [key, output] of Object.entries(outputs)) {
+        if (output.url) {
+          // Determine local path
+          let localPath;
+          if (key === 'hls_master') {
+            localPath = join(hlsDir, 'master.m3u8');
+          } else if (key.startsWith('hls_av1_')) {
+            const quality = key.replace('hls_av1_', '').replace('p', '');
+            const qualityDir = join(hlsDir, `${quality}p`);
+            execSync(`mkdir -p "${qualityDir}"`);
+            localPath = join(qualityDir, 'playlist.m3u8');
+          } else {
+            continue;
+          }
+
+          // Download the file
+          console.log(`[${jobId}] Downloading ${key}...`);
+          const response = await fetch(output.url);
+          if (response.ok) {
+            const content = await response.text();
+            writeFileSync(localPath, content);
+
+            // If it's a playlist, also download segments
+            if (localPath.endsWith('.m3u8') && key !== 'hls_master') {
+              const lines = content.split('\n');
+              const dir = localPath.replace('/playlist.m3u8', '');
+              for (const line of lines) {
+                if (line.endsWith('.ts') || line.endsWith('.m4s')) {
+                  const segmentUrl = new URL(line, output.url).href;
+                  const segmentPath = join(dir, line);
+                  const segResponse = await fetch(segmentUrl);
+                  if (segResponse.ok) {
+                    const segBuffer = await segResponse.buffer();
+                    writeFileSync(segmentPath, segBuffer);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Pin HLS directory to IPFS
+      console.log(`[${jobId}] Pinning HLS directory to IPFS...`);
+
+      const files = [];
+      function collectFiles(dir, prefix = '') {
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const fullPath = join(dir, entry.name);
+          const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+          if (entry.isDirectory()) {
+            collectFiles(fullPath, relativePath);
+          } else {
+            files.push({ path: relativePath, fullPath: fullPath });
+          }
+        }
+      }
+      collectFiles(hlsDir);
+
+      const form = new FormData();
+      for (const file of files) {
+        form.append('file', createReadStream(file.fullPath), {
+          filepath: file.path
+        });
+      }
+
+      const addResponse = await fetch(`${IPFS_API_URL}/api/v0/add?recursive=true&wrap-with-directory=true&pin=true`, {
+        method: 'POST',
+        body: form
+      });
+
+      if (!addResponse.ok) {
+        throw new Error(`Failed to pin HLS: ${addResponse.statusText}`);
+      }
+
+      // Parse multiline JSON response to get directory CID
+      const addText = await addResponse.text();
+      const addLines = addText.trim().split('\n');
+      let hlsCid = null;
+      for (const line of addLines) {
+        const obj = JSON.parse(line);
+        if (obj.Name === '') {
+          hlsCid = obj.Hash;
+        }
+      }
+
+      if (!hlsCid) {
+        throw new Error('Could not determine HLS directory CID');
+      }
+
+      console.log(`[${jobId}] HLS pinned: ${hlsCid}`);
+
+      // Pin to Pinata for persistence
+      if (PINATA_JWT) {
+        try {
+          const pinataResponse = await fetch('https://api.pinata.cloud/pinning/pinByHash', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${PINATA_JWT}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              hashToPin: hlsCid,
+              pinataMetadata: { name: `coconut-hls-${jobId}` }
+            })
+          });
+          if (pinataResponse.ok) {
+            console.log(`[${jobId}] Pinned to Pinata`);
+          }
+        } catch (e) {
+          console.warn(`[${jobId}] Pinata pin failed:`, e.message);
+        }
+      }
+
+      // Cleanup
+      try { execSync(`rm -rf "${hlsDir}"`); } catch (e) { /* ignore */ }
+
+      // Update job state
+      job.status = 'complete';
+      job.hlsCid = hlsCid;
+      job.completedAt = new Date().toISOString();
+      saveJob(jobId, job);
+
+      console.log(`[${jobId}] Job complete! HLS CID: ${hlsCid}`);
+
+    } else if (event.event === 'job.failed') {
+      console.error(`[${jobId}] Coconut job failed:`, event.error);
+      job.status = 'failed';
+      job.error = event.error;
+      job.failedAt = new Date().toISOString();
+      saveJob(jobId, job);
+    }
+
+    res.json({ received: true });
+
+  } catch (error) {
+    console.error(`[${jobId}] Webhook processing error:`, error);
+    job.status = 'failed';
+    job.error = error.message;
+    saveJob(jobId, job);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get job status
+app.get('/job/:id', (req, res) => {
+  const job = loadJob(req.params.id);
+  if (!job) {
+    return res.status(404).json({ error: 'Job not found' });
+  }
+  res.json(job);
+});
+
+// List recent jobs
+app.get('/jobs', requireWalletAuth, (req, res) => {
+  try {
+    const files = readdirSync(JOBS_DIR).filter(f => f.endsWith('.json'));
+    const jobs = files
+      .map(f => {
+        try {
+          return JSON.parse(readFileSync(join(JOBS_DIR, f), 'utf8'));
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter(j => j !== null)
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, 50);
+
+    res.json({ jobs });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Blue Railroad Pinning Service listening on port ${PORT}`);
   console.log(`Pinata configured: ${PINATA_JWT ? 'yes (JWT)' : 'NO - uploads will fail'}`);
+  console.log(`Coconut configured: ${COCONUT_API_KEY ? 'yes' : 'NO - cloud transcoding disabled'}`);
   console.log(`IPFS API URL: ${IPFS_API_URL}`);
   console.log(`IPFS Gateway URL: ${IPFS_GATEWAY_URL}`);
   const walletCount = AUTHORIZED_WALLETS.split(',').filter(w => w.trim()).length;
