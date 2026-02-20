@@ -1063,12 +1063,16 @@
                 - PINATA_JWT={{ pinata_jwt }}
                 - AUTHORIZED_WALLETS={{ pinning_authorized_wallets }}
                 - IPFS_API_URL=http://ipfs:5001
+                - IPFS_GATEWAY_URL=https://ipfs.maybelle.cryptograss.live
                 - STAGING_DIR=/staging
                 # Wiki bot credentials for updating submission pages after pinning
                 # Uses same "Blue Railroad Imports" bot credentials as Jenkins
                 - WIKI_URL=https://pickipedia.xyz
                 - WIKI_BOT_USER={{ BLUERAILROAD_BOT_USERNAME }}
                 - WIKI_BOT_PASSWORD={{ BLUERAILROAD_BOT_PASSWORD }}
+                # Coconut.co cloud transcoding
+                - COCONUT_API_KEY={{ coconut_api_key | default('') }}
+                - WEBHOOK_BASE_URL=https://pinning.maybelle.cryptograss.live
               volumes:
                 - /mnt/persist/ipfs/staging:/staging
               ports:
