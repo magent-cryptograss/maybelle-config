@@ -1118,15 +1118,18 @@
         state: absent
       ignore_errors: yes
 
-    # Force rebuild with --no-cache to ensure code changes are picked up
+    # Force rebuild with --no-cache when --rebuild flag is passed
+    # This ensures code changes are picked up (Docker layer caching can skip new files)
     - name: Build pinning service with no cache
       command: docker compose build --no-cache
       args:
         chdir: /mnt/persist/pinning-service
+      when: rebuild_images | default(false) | bool
 
     - name: Start pinning services
       community.docker.docker_compose_v2:
         project_src: /mnt/persist/pinning-service
+        build: always
         state: present
 
     - name: Wait for pinning service to be ready

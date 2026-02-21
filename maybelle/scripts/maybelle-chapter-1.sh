@@ -158,27 +158,16 @@ fi
 
 echo ""
 
-# If rebuild flag is set, rebuild docker images before running ansible
+# Pass rebuild flag to ansible if set
+EXTRA_VARS=""
 if [ -n "$REBUILD_IMAGES" ]; then
-    echo "Rebuilding docker images (--no-cache)..."
-
-    # Rebuild pinning-service if it has a docker-compose.yml
-    PINNING_DIR="${MOUNT_POINT}/pinning-service"
-    if [ -f "$PINNING_DIR/docker-compose.yml" ]; then
-        echo "Rebuilding pinning-service..."
-        cd "$PINNING_DIR"
-        docker-compose down || true
-        docker-compose build --no-cache
-    fi
-
-    # Could add other services here as needed
-    echo "Docker images rebuilt."
-    echo ""
+    echo "Will rebuild docker images (--no-cache) during ansible run"
+    EXTRA_VARS="-e rebuild_images=true"
 fi
 
 echo "Running ansible playbook..."
 cd "$REPO_DIR/maybelle/ansible"
-ansible-playbook -i localhost, maybelle.yml --vault-password-file "$VAULT_PASSWORD_FILE"
+ansible-playbook -i localhost, maybelle.yml --vault-password-file "$VAULT_PASSWORD_FILE" $EXTRA_VARS
 
 echo ""
 echo "=== Chapter 1 complete ==="
