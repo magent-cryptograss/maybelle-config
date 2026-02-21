@@ -1118,10 +1118,15 @@
         state: absent
       ignore_errors: yes
 
+    # Force rebuild with --no-cache to ensure code changes are picked up
+    - name: Build pinning service with no cache
+      command: docker compose build --no-cache
+      args:
+        chdir: /mnt/persist/pinning-service
+
     - name: Start pinning services
       community.docker.docker_compose_v2:
         project_src: /mnt/persist/pinning-service
-        build: always
         state: present
 
     - name: Wait for pinning service to be ready
