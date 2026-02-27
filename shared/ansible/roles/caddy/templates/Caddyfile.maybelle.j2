@@ -35,7 +35,7 @@ glitchtip.{{ domain_name }} {
 # GlitchTip DSN endpoint (for automated pickipedia config)
 glitchtip-dsn.{{ domain_name }} {
     basicauth {
-        deploy {{ glitchtip_dsn_fetch_password_hash }}
+        deploy {{ glitchtip_dsn_fetch_password_hashed }}
     }
     root * /mnt/persist/glitchtip
     file_server {

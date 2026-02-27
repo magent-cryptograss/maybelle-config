@@ -195,6 +195,17 @@
         ipfs_admin_password_hash: "{{ ipfs_password_hash_result.stdout }}"
       no_log: true
 
+    - name: Hash GlitchTip DSN fetch password for Caddy basicauth
+      command: docker run --rm caddy caddy hash-password --plaintext '{{ glitchtip_dsn_fetch_password }}'
+      register: glitchtip_dsn_password_hash_result
+      changed_when: false
+      no_log: true
+
+    - name: Set GlitchTip DSN fetch password hash variable
+      set_fact:
+        glitchtip_dsn_fetch_password_hashed: "{{ glitchtip_dsn_password_hash_result.stdout }}"
+      no_log: true
+
     - name: Configure Caddy reverse proxy
       include_role:
         name: caddy
