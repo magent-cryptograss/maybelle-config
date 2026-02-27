@@ -166,27 +166,26 @@
     group: www-data
     mode: '0644'
 
-- name: Create LocalSettings.local.php template
+- name: Create LocalSettings.local.php with secrets
   copy:
-    dest: "{{ mediawiki_root }}/LocalSettings.local.php.template"
+    dest: "{{ mediawiki_root }}/LocalSettings.local.php"
     content: |
       <?php
-      # PickiPedia secrets - NOT checked into version control
-      # Copy this to LocalSettings.local.php and fill in values
+      # PickiPedia secrets - managed by ansible, NOT checked into version control
 
       # Database
       $wgDBtype = "mysql";
       $wgDBserver = "localhost";
       $wgDBname = "{{ db_name }}";
       $wgDBuser = "{{ db_user }}";
-      $wgDBpassword = "FILL_IN_PASSWORD";
+      $wgDBpassword = "{{ pickipedia_db_password }}";
 
       # Security keys
-      $wgSecretKey = "FILL_IN_SECRET_KEY";
-      $wgUpgradeKey = "FILL_IN_UPGRADE_KEY";
+      $wgSecretKey = "{{ pickipedia_secret_key }}";
+      $wgUpgradeKey = "{{ pickipedia_upgrade_key }}";
 
-      # Sentry/GlitchTip (optional)
-      # $wgSentryDsn = "https://...";
+      # Sentry/GlitchTip error tracking
+      $wgSentryDsn = "{{ pickipedia_sentry_dsn }}";
     owner: www-data
     group: www-data
     mode: '0600'
