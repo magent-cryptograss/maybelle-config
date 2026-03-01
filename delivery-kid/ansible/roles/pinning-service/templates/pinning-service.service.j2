@@ -13,6 +13,9 @@ Environment=IPFS_API=http://127.0.0.1:5001
 {% if pinata_jwt is defined %}
 Environment=PINATA_JWT={{ pinata_jwt }}
 {% endif %}
+{% if authorized_wallets is defined %}
+Environment=AUTHORIZED_WALLETS={{ authorized_wallets }}
+{% endif %}
 
 [Install]
 WantedBy=multi-user.target

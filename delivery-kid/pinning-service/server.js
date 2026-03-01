@@ -3,6 +3,9 @@
  *
  * Simple API for pinning content to the local IPFS node
  * and optionally backing up to Pinata.
+ *
+ * Authentication: Write endpoints require wallet signature authentication.
+ * Use X-Signature and X-Timestamp headers with a signed message.
  */
 
 import express from 'express';
@@ -10,6 +13,7 @@ import multer from 'multer';
 import { execSync, spawn } from 'child_process';
 import { createReadStream, statSync, existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { requireWalletAuth } from './auth.js';
 
 const app = express();
 app.use(express.json());
@@ -19,6 +23,7 @@ const IPFS_API = process.env.IPFS_API || 'http://127.0.0.1:5001';
 const PINATA_JWT = process.env.PINATA_JWT;
 const UPLOAD_DIR = process.env.UPLOAD_DIR || '/tmp/uploads';
 const TORRENTS_DIR = process.env.TORRENTS_DIR || '/var/lib/aria2/torrents';
+const AUTHORIZED_WALLETS = process.env.AUTHORIZED_WALLETS || '';
 
 // Ensure directories exist
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -31,8 +36,13 @@ app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', service: 'delivery-kid' });
 });
 
+// Server time endpoint - clients use this for auth timestamps to avoid clock drift issues
+app.get('/api/time', (req, res) => {
+    res.json({ timestamp: Date.now() });
+});
+
 // Pin an existing CID
-app.post('/api/pin', async (req, res) => {
+app.post('/api/pin', requireWalletAuth, async (req, res) => {
     const { cid, name } = req.body;
 
     if (!cid) {
@@ -62,7 +72,7 @@ app.post('/api/pin', async (req, res) => {
 });
 
 // Upload and pin a file
-app.post('/api/upload', upload.single('file'), async (req, res) => {
+app.post('/api/upload', requireWalletAuth, upload.single('file'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded' });
     }
@@ -93,7 +103,7 @@ app.post('/api/upload', upload.single('file'), async (req, res) => {
 });
 
 // Upload and pin a directory (as tar)
-app.post('/api/upload-directory', upload.single('archive'), async (req, res) => {
+app.post('/api/upload-directory', requireWalletAuth, upload.single('archive'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No archive uploaded' });
     }
@@ -132,7 +142,7 @@ app.post('/api/upload-directory', upload.single('archive'), async (req, res) => 
 });
 
 // Add a torrent for seeding
-app.post('/api/torrent', upload.single('torrent'), async (req, res) => {
+app.post('/api/torrent', requireWalletAuth, upload.single('torrent'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ error: 'No torrent file uploaded' });
     }
@@ -209,8 +219,10 @@ async function pinToPinata(cid, name) {
     }
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`delivery-kid pinning service listening on port ${PORT}`);
     console.log(`IPFS API: ${IPFS_API}`);
     console.log(`Pinata backup: ${PINATA_JWT ? 'enabled' : 'disabled'}`);
+    const walletCount = AUTHORIZED_WALLETS.split(',').filter(w => w.trim()).length;
+    console.log(`Wallet auth: ${walletCount} authorized wallet(s)`);
 });
