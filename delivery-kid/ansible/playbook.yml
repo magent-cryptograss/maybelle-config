@@ -45,15 +45,9 @@
 
     - name: Deploy SSH login banner
       copy:
+        src: ../../ascii-art/delivery-kid.txt
         dest: /etc/motd
         mode: '0644'
-        content: |
-          =============================================
-                    D E L I V E R Y   K I D
-          =============================================
-          IPFS & BitTorrent Distribution Server
-          Cryptograss Music Distribution Network
-          =============================================
 
   roles:
     # Mount Storage Box first - IPFS depends on it
