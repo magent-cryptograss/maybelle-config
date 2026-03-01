@@ -1,0 +1,26 @@
+all:
+  hosts:
+    delivery-kid:
+      ansible_host: YOUR_SERVER_IP
+      ansible_user: root
+      ansible_ssh_private_key_file: ~/.ssh/id_ed25519_hunter
+  vars:
+    # Server specs (Hetzner CX22 should be sufficient)
+    # - 2 vCPU (AMD EPYC)
+    # - 4 GB RAM
+    # - 40 GB NVMe (+ attached volume for storage)
+    # - ~€4/month + storage volume
+
+    # Domain and SSL
+    domain_name: delivery.cryptograss.live
+    ipfs_gateway_domain: ipfs.cryptograss.live
+
+    # IPFS configuration
+    ipfs_version: "0.27.0"
+    ipfs_storage_max: "100GB"
+
+    # Pinata backup (optional - set in vault.yml)
+    # pinata_jwt: "{{ vault_pinata_jwt }}"
+
+    # Torrent seeding
+    torrent_upload_limit: "10M"  # 10 MB/s upload limit

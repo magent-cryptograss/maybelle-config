@@ -1,0 +1,93 @@
+---
+# Delivery Kid - IPFS/BitTorrent Distribution Server
+#
+# Pre-requisites:
+# 1. Create Hetzner CX22 VPS with Ubuntu 24.04
+# 2. Add SSH key during creation
+# 3. Attach storage volume for IPFS data
+# 4. Point DNS records to server IP
+# 5. Run: ansible-playbook -i inventory.yml playbook.yml
+
+- name: Provision Delivery Kid Server
+  hosts: delivery-kid
+  become: yes
+
+  vars_files:
+    - ../../secrets/vault.yml
+
+  vars:
+    system_packages:
+      - curl
+      - wget
+      - git
+      - jq
+      - aria2
+      - nodejs
+      - npm
+
+  pre_tasks:
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Install system packages
+      apt:
+        name: "{{ system_packages }}"
+        state: present
+
+    - name: Set timezone
+      timezone:
+        name: UTC
+
+    - name: Deploy SSH login banner
+      copy:
+        dest: /etc/motd
+        mode: '0644'
+        content: |
+          =============================================
+                    D E L I V E R Y   K I D
+          =============================================
+          IPFS & BitTorrent Distribution Server
+          Cryptograss Music Distribution Network
+          =============================================
+
+  roles:
+    - ipfs
+    - pinning-service
+    - aria2
+    - role: ../../shared/ansible/roles/caddy
+      vars:
+        caddy_config: |
+          {{ domain_name }} {
+              handle /api/* {
+                  reverse_proxy localhost:3001
+              }
+              handle {
+                  respond "delivery-kid - IPFS pinning server" 200
+              }
+          }
+
+          {{ ipfs_gateway_domain }} {
+              reverse_proxy localhost:8080
+          }
+
+  post_tasks:
+    - name: Display post-installation notes
+      debug:
+        msg: |
+          Delivery Kid provisioned successfully!
+
+          Services running:
+          - IPFS daemon on port 5001 (API) and 8080 (gateway)
+          - Pinning service API on port 3001
+          - aria2 BitTorrent on port 6800 (RPC) and 6881 (DHT)
+
+          Endpoints:
+          - https://{{ domain_name }}/api/health
+          - https://{{ ipfs_gateway_domain }}/ipfs/<CID>
+
+          To pin content:
+          curl -X POST https://{{ domain_name }}/api/pin \
+            -H "Content-Type: application/json" \
+            -d '{"cid": "Qm...", "name": "My Content"}'

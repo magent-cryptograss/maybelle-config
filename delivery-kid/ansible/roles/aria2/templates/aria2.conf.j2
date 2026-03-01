@@ -1,0 +1,25 @@
+# aria2 configuration for torrent seeding
+enable-rpc=true
+rpc-listen-all=false
+rpc-listen-port=6800
+
+# Seeding settings - seed forever
+seed-ratio=0
+seed-time=0
+max-upload-limit={{ torrent_upload_limit | default('0') }}
+
+# Session persistence
+input-file=/var/lib/aria2/session
+save-session=/var/lib/aria2/session
+save-session-interval=60
+
+# Download directory
+dir=/var/lib/aria2/downloads
+
+# DHT for public torrents
+enable-dht=true
+dht-listen-port=6881
+
+# Logging
+log=/var/log/aria2.log
+log-level=warn

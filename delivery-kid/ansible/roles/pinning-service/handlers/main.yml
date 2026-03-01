@@ -1,0 +1,5 @@
+---
+- name: restart pinning-service
+  systemd:
+    name: pinning-service
+    state: restarted

@@ -1,0 +1,88 @@
+---
+- name: Check if IPFS is installed
+  command: which ipfs
+  register: ipfs_check
+  ignore_errors: yes
+  changed_when: false
+
+- name: Download IPFS (Kubo)
+  get_url:
+    url: "https://dist.ipfs.tech/kubo/v{{ ipfs_version }}/kubo_v{{ ipfs_version }}_linux-amd64.tar.gz"
+    dest: /tmp/kubo.tar.gz
+  when: ipfs_check.rc != 0
+
+- name: Extract IPFS
+  unarchive:
+    src: /tmp/kubo.tar.gz
+    dest: /tmp
+    remote_src: yes
+  when: ipfs_check.rc != 0
+
+- name: Install IPFS binary
+  command: /tmp/kubo/install.sh
+  when: ipfs_check.rc != 0
+
+- name: Create IPFS user
+  user:
+    name: ipfs
+    system: yes
+    home: /var/lib/ipfs
+    shell: /bin/false
+    create_home: yes
+
+- name: Initialize IPFS
+  become_user: ipfs
+  command: ipfs init --profile server
+  args:
+    creates: /var/lib/ipfs/.ipfs/config
+  environment:
+    IPFS_PATH: /var/lib/ipfs/.ipfs
+
+- name: Configure IPFS storage max
+  become_user: ipfs
+  command: "ipfs config Datastore.StorageMax {{ ipfs_storage_max }}"
+  environment:
+    IPFS_PATH: /var/lib/ipfs/.ipfs
+  changed_when: false
+
+- name: Configure IPFS API address
+  become_user: ipfs
+  command: ipfs config Addresses.API /ip4/127.0.0.1/tcp/5001
+  environment:
+    IPFS_PATH: /var/lib/ipfs/.ipfs
+  changed_when: false
+
+- name: Configure IPFS gateway address
+  become_user: ipfs
+  command: ipfs config Addresses.Gateway /ip4/127.0.0.1/tcp/8080
+  environment:
+    IPFS_PATH: /var/lib/ipfs/.ipfs
+  changed_when: false
+
+- name: Create IPFS systemd service
+  copy:
+    dest: /etc/systemd/system/ipfs.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=IPFS Daemon
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=ipfs
+      Environment=IPFS_PATH=/var/lib/ipfs/.ipfs
+      ExecStart=/usr/local/bin/ipfs daemon --enable-gc
+      Restart=on-failure
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: restart ipfs
+
+- name: Enable and start IPFS
+  systemd:
+    name: ipfs
+    enabled: yes
+    state: started
+    daemon_reload: yes

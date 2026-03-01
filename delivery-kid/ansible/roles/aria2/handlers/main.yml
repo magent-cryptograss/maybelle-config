@@ -1,0 +1,5 @@
+---
+- name: restart aria2
+  systemd:
+    name: aria2
+    state: restarted

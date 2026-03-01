@@ -1,0 +1,33 @@
+---
+- name: Create pinning service directory
+  file:
+    path: /opt/pinning-service
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Copy pinning service files
+  synchronize:
+    src: ../../../pinning-service/
+    dest: /opt/pinning-service/
+  notify: restart pinning-service
+
+- name: Install pinning service dependencies
+  npm:
+    path: /opt/pinning-service
+    state: present
+
+- name: Create pinning service systemd unit
+  template:
+    src: pinning-service.service.j2
+    dest: /etc/systemd/system/pinning-service.service
+    mode: '0644'
+  notify: restart pinning-service
+
+- name: Enable and start pinning service
+  systemd:
+    name: pinning-service
+    enabled: yes
+    state: started
+    daemon_reload: yes

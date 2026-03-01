@@ -1,0 +1,55 @@
+---
+- name: Create aria2 directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - /etc/aria2
+    - /var/lib/aria2
+    - /var/lib/aria2/downloads
+    - /var/lib/aria2/torrents
+
+- name: Create aria2 session file
+  file:
+    path: /var/lib/aria2/session
+    state: touch
+    owner: root
+    group: root
+    mode: '0644'
+  changed_when: false
+
+- name: Configure aria2
+  template:
+    src: aria2.conf.j2
+    dest: /etc/aria2/aria2.conf
+    mode: '0644'
+  notify: restart aria2
+
+- name: Create aria2 systemd service
+  copy:
+    dest: /etc/systemd/system/aria2.service
+    mode: '0644'
+    content: |
+      [Unit]
+      Description=aria2 BitTorrent Client
+      After=network.target
+
+      [Service]
+      Type=simple
+      ExecStart=/usr/bin/aria2c --conf-path=/etc/aria2/aria2.conf
+      Restart=on-failure
+      RestartSec=10
+
+      [Install]
+      WantedBy=multi-user.target
+  notify: restart aria2
+
+- name: Enable and start aria2
+  systemd:
+    name: aria2
+    enabled: yes
+    state: started
+    daemon_reload: yes

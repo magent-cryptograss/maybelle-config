@@ -1,0 +1,18 @@
+[Unit]
+Description=IPFS Pinning Service
+After=network.target ipfs.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/pinning-service
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=10
+Environment=PORT=3001
+Environment=IPFS_API=http://127.0.0.1:5001
+{% if pinata_jwt is defined %}
+Environment=PINATA_JWT={{ pinata_jwt }}
+{% endif %}
+
+[Install]
+WantedBy=multi-user.target
