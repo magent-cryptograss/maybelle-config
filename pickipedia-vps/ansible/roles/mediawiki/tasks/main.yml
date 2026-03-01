@@ -50,15 +50,9 @@
     group: www-data
     mode: '0755'
 
-# Fetch LocalSettings.php from the pickipedia repo (source of truth)
-- name: Download LocalSettings.php from pickipedia repo
-  get_url:
-    url: "https://raw.githubusercontent.com/cryptograss/pickipedia/main/LocalSettings.php"
-    dest: "{{ mediawiki_root }}/LocalSettings.php"
-    owner: www-data
-    group: www-data
-    mode: '0644'
-    force: yes
+# NOTE: LocalSettings.php is deployed by Jenkins from the pickipedia repo.
+# This ansible role only handles initial VPS provisioning.
+# See: https://github.com/cryptograss/pickipedia/blob/main/Jenkinsfile
 
 - name: Fetch GlitchTip DSN from maybelle
   uri:
