@@ -152,6 +152,10 @@
       $wgGroupPermissions['user']['edit'] = true;
       $wgGroupPermissions['sysop']['createaccount'] = true;
 
+      ## Release group - users who can add trusted IPFS/torrent content
+      ## delivery-kid only pins CIDs from users in this group
+      $wgGroupPermissions['release']['edit'] = true;
+
       ## Load extensions
       wfLoadExtension( 'ParserFunctions' );
       wfLoadExtension( 'TemplateStyles' );
