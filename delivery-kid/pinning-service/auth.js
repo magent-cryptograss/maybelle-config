@@ -1,10 +1,11 @@
 import { verifyMessage } from 'viem';
 
-// Message format: "Authorize delivery-kid pinning\nTimestamp: {timestamp}"
-// Timestamp must be within 10 minutes of server time to prevent replay attacks
+// Message format: "Authorize Blue Railroad pinning\nTimestamp: {timestamp}"
+// Timestamp must be within 5 minutes of server time to prevent replay attacks
 const MAX_TIMESTAMP_DRIFT_MS = 10 * 60 * 1000; // 10 minutes
 
-// Authorized wallets - loaded from environment variable as comma-separated list
+// Authorized wallets - can be contract owner or allowlisted addresses
+// Loaded from environment variable as comma-separated list
 function getAuthorizedWallets() {
     const walletsEnv = process.env.AUTHORIZED_WALLETS || '';
     return walletsEnv
@@ -19,7 +20,7 @@ function getAuthorizedWallets() {
  * @returns {string} The message to sign
  */
 export function createAuthMessage(timestamp) {
-    return `Authorize delivery-kid pinning\nTimestamp: ${timestamp}`;
+    return `Authorize Blue Railroad pinning\nTimestamp: ${timestamp}`;
 }
 
 /**

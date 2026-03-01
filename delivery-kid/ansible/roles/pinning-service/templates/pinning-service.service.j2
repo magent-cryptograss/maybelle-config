@@ -1,6 +1,7 @@
 [Unit]
-Description=IPFS Pinning Service
+Description=IPFS Pinning and Transcoding Service
 After=network.target ipfs.service
+Wants=ipfs.service
 
 [Service]
 Type=simple
@@ -8,13 +9,46 @@ WorkingDirectory=/opt/pinning-service
 ExecStart=/usr/bin/node server.js
 Restart=on-failure
 RestartSec=10
+
+# Core settings
 Environment=PORT=3001
-Environment=IPFS_API=http://127.0.0.1:5001
+Environment=IPFS_API_URL=http://127.0.0.1:5001
+Environment=STAGING_DIR=/var/lib/pinning-service/staging
+
+# Gateway URL for IPFS content
+{% if ipfs_gateway_url is defined %}
+Environment=IPFS_GATEWAY_URL={{ ipfs_gateway_url }}
+{% endif %}
+
+# Pinata for cloud pinning backup
 {% if pinata_jwt is defined %}
 Environment=PINATA_JWT={{ pinata_jwt }}
 {% endif %}
+
+# Wallet authentication
 {% if authorized_wallets is defined %}
 Environment=AUTHORIZED_WALLETS={{ authorized_wallets }}
+{% endif %}
+
+# Coconut.co cloud transcoding
+{% if coconut_api_key is defined %}
+Environment=COCONUT_API_KEY={{ coconut_api_key }}
+{% endif %}
+
+# Webhook URL for Coconut callbacks
+{% if webhook_base_url is defined %}
+Environment=WEBHOOK_BASE_URL={{ webhook_base_url }}
+{% endif %}
+
+# PickiPedia wiki integration (for updating submission pages)
+{% if wiki_url is defined %}
+Environment=WIKI_URL={{ wiki_url }}
+{% endif %}
+{% if wiki_bot_user is defined %}
+Environment=WIKI_BOT_USER={{ wiki_bot_user }}
+{% endif %}
+{% if wiki_bot_password is defined %}
+Environment=WIKI_BOT_PASSWORD={{ wiki_bot_password }}
 {% endif %}
 
 [Install]

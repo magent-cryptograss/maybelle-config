@@ -7,10 +7,39 @@
     group: root
     mode: '0755'
 
+- name: Create staging directory
+  file:
+    path: /var/lib/pinning-service/staging
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Create jobs directory
+  file:
+    path: /var/lib/pinning-service/staging/jobs
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Install ffmpeg for video transcoding
+  apt:
+    name:
+      - ffmpeg
+    state: present
+
+- name: Install yt-dlp for URL downloads
+  pip:
+    name: yt-dlp
+    state: present
+
 - name: Copy pinning service files
   synchronize:
     src: ../../../pinning-service/
     dest: /opt/pinning-service/
+    rsync_opts:
+      - "--exclude=node_modules"
   notify: restart pinning-service
 
 - name: Install pinning service dependencies
