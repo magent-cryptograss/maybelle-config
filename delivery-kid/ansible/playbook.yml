@@ -188,6 +188,7 @@
           command: >
             docker run --rm
             -v /var/lib/ipfs:/data/ipfs
+            -v /mnt/storage-box/ipfs/blocks:/data/ipfs/blocks
             ipfs/kubo:latest
             config Addresses.API /ip4/0.0.0.0/tcp/5001
 
