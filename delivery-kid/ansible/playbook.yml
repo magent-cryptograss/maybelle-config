@@ -180,17 +180,13 @@
         dest: /etc/caddy/Caddyfile
         content: |
           {{ domain_name }} {
-              reverse_proxy /health localhost:3001
-              reverse_proxy /time localhost:3001
-              reverse_proxy /pin* localhost:3001
-              reverse_proxy /transcode* localhost:3001
-              reverse_proxy /job* localhost:3001
-              reverse_proxy /local-pins localhost:3001
-              reverse_proxy /webhook/* localhost:3001
-
-              handle {
-                  respond "delivery-kid pinning service" 200
+              @pinning {
+                  path /health /time /local-pins
+                  path /pin* /transcode* /job* /webhook/*
               }
+              reverse_proxy @pinning localhost:3001
+
+              respond "delivery-kid pinning service" 200
           }
 
           {{ ipfs_gateway_domain }} {
