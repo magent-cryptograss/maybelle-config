@@ -109,6 +109,7 @@
                 context: .
               container_name: pinning-service
               environment:
+                - NODE_NAME=delivery-kid
                 - PORT=3001
                 - PINATA_JWT={{ pinata_jwt }}
                 - AUTHORIZED_WALLETS={{ pinning_authorized_wallets }}

@@ -10,6 +10,8 @@ import Hash from 'ipfs-only-hash';
 import { CID } from 'multiformats/cid';
 import { requireWalletAuth } from './auth.js';
 import { updateSubmissionCid, isWikiConfigured } from './wiki-update.js';
+import { getAllReleases, syncReleases, getSyncStatus } from './wiki-sync.js';
+import { getTorrentSummary, addTorrentByInfohash, getActiveInfohashes, isAria2Available } from './aria2-client.js';
 
 const app = express();
 
@@ -47,17 +49,18 @@ app.use(cors({
 app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
+const NODE_NAME = process.env.NODE_NAME || 'delivery-kid';
 const PINATA_JWT = process.env.PINATA_JWT;
 // Legacy keys kept for backwards compatibility during transition
 const PINATA_API_KEY = process.env.PINATA_API_KEY;
 const PINATA_SECRET_KEY = process.env.PINATA_SECRET_KEY;
 const IPFS_API_URL = process.env.IPFS_API_URL || 'http://ipfs:5001';
-const IPFS_GATEWAY_URL = process.env.IPFS_GATEWAY_URL || 'https://ipfs.maybelle.cryptograss.live';
+const IPFS_GATEWAY_URL = process.env.IPFS_GATEWAY_URL || 'https://ipfs.delivery-kid.cryptograss.live';
 const STAGING_DIR = process.env.STAGING_DIR || '/staging';
 const AUTHORIZED_WALLETS = process.env.AUTHORIZED_WALLETS || '';
 const COCONUT_API_KEY = process.env.COCONUT_API_KEY;
 const JOBS_DIR = process.env.JOBS_DIR || join(STAGING_DIR, 'jobs');
-const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL || 'https://pinning.maybelle.cryptograss.live';
+const WEBHOOK_BASE_URL = process.env.WEBHOOK_BASE_URL || 'https://delivery-kid.cryptograss.live';
 const PIN_MANIFEST_PATH = process.env.PIN_MANIFEST_PATH || join(STAGING_DIR, 'pin-manifest.json');
 
 // Pin manifest - tracks when CIDs were pinned locally (IPFS doesn't store this)
@@ -138,7 +141,7 @@ app.get('/local-pins', async (req, res) => {
     }));
 
     res.json({
-      node: 'maybelle',
+      node: NODE_NAME,
       fetchedAt: new Date().toISOString(),
       count: pins.length,
       pins
@@ -1301,6 +1304,148 @@ app.get('/jobs', requireWalletAuth, (req, res) => {
   }
 });
 
+// =============================================================================
+// Wiki Sync Endpoints - Sync releases from PickiPedia
+// =============================================================================
+
+// Get sync status
+app.get('/sync/status', async (req, res) => {
+  try {
+    const status = getSyncStatus();
+    res.json(status);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Trigger a manual sync (requires auth)
+app.post('/sync/run', requireWalletAuth, async (req, res) => {
+  try {
+    console.log('[sync] Manual sync triggered');
+    const result = await syncReleases();
+    res.json(result);
+  } catch (error) {
+    console.error('[sync] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List all releases from the wiki (public endpoint)
+app.get('/releases', async (req, res) => {
+  try {
+    const filter = req.query.filter || 'all';
+    const releases = await getAllReleases(filter);
+    res.json({
+      count: releases.length,
+      releases
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================================================
+// Torrent Endpoints - BitTorrent seeding via aria2
+// =============================================================================
+
+// Get torrent status summary
+app.get('/torrents/status', async (req, res) => {
+  try {
+    const summary = await getTorrentSummary();
+    res.json(summary);
+  } catch (error) {
+    res.status(500).json({ error: error.message, available: false });
+  }
+});
+
+// Add a torrent by infohash (requires auth)
+app.post('/torrents/add', requireWalletAuth, async (req, res) => {
+  const { infohash, name, trackers } = req.body;
+
+  if (!infohash) {
+    return res.status(400).json({ error: 'infohash is required' });
+  }
+
+  // Validate infohash format (40 hex chars)
+  if (!/^[a-fA-F0-9]{40}$/.test(infohash)) {
+    return res.status(400).json({ error: 'Invalid infohash format (expected 40 hex characters)' });
+  }
+
+  try {
+    const gid = await addTorrentByInfohash(infohash, name, trackers);
+    res.json({ success: true, gid, infohash, name });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Sync torrents from wiki releases (requires auth)
+app.post('/torrents/sync', requireWalletAuth, async (req, res) => {
+  try {
+    // Check if aria2 is available
+    const aria2Ready = await isAria2Available();
+    if (!aria2Ready) {
+      return res.json({
+        status: 'skipped',
+        message: 'aria2 not available'
+      });
+    }
+
+    // Get releases with torrent infohashes
+    const releases = await getAllReleases('torrent');
+    const activeInfohashes = await getActiveInfohashes();
+
+    const results = {
+      checked: releases.length,
+      alreadySeeding: 0,
+      added: 0,
+      failed: 0,
+      details: []
+    };
+
+    for (const release of releases) {
+      const infohash = release.bittorrent_infohash;
+      if (!infohash) continue;
+
+      if (activeInfohashes.has(infohash.toLowerCase())) {
+        results.alreadySeeding++;
+        continue;
+      }
+
+      try {
+        const gid = await addTorrentByInfohash(
+          infohash,
+          release.title,
+          release.bittorrent_trackers
+        );
+        results.added++;
+        results.details.push({
+          action: 'added',
+          title: release.title,
+          infohash,
+          gid
+        });
+      } catch (error) {
+        results.failed++;
+        results.details.push({
+          action: 'failed',
+          title: release.title,
+          infohash,
+          error: error.message
+        });
+      }
+    }
+
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================================================
+// Startup
+// =============================================================================
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Blue Railroad Pinning Service listening on port ${PORT}`);
   console.log(`Pinata configured: ${PINATA_JWT ? 'yes (JWT)' : 'NO - uploads will fail'}`);
@@ -1309,4 +1454,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`IPFS Gateway URL: ${IPFS_GATEWAY_URL}`);
   const walletCount = AUTHORIZED_WALLETS.split(',').filter(w => w.trim()).length;
   console.log(`Wallet auth: ${walletCount} authorized wallet(s)`);
+
+  // Check aria2 availability on startup
+  isAria2Available().then(available => {
+    console.log(`aria2 BitTorrent: ${available ? 'connected' : 'not available'}`);
+  });
 });
