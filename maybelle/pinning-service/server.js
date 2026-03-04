@@ -1474,4 +1474,28 @@ app.listen(PORT, '0.0.0.0', () => {
   isAria2Available().then(available => {
     console.log(`aria2 BitTorrent: ${available ? 'connected' : 'not available'}`);
   });
+
+  // Wiki sync timer - sync releases every minute
+  const SYNC_INTERVAL_MS = 60 * 1000; // 1 minute
+
+  // Initial sync after a short delay (let IPFS initialize)
+  setTimeout(async () => {
+    console.log('[wiki-sync] Running initial sync...');
+    try {
+      await syncReleases();
+    } catch (error) {
+      console.error('[wiki-sync] Initial sync failed:', error.message);
+    }
+  }, 10 * 1000); // 10 second delay
+
+  // Then sync every minute
+  setInterval(async () => {
+    try {
+      await syncReleases();
+    } catch (error) {
+      console.error('[wiki-sync] Scheduled sync failed:', error.message);
+    }
+  }, SYNC_INTERVAL_MS);
+
+  console.log(`Wiki sync: enabled (every ${SYNC_INTERVAL_MS / 1000}s)`);
 });
