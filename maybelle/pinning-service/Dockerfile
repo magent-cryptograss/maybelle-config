@@ -14,12 +14,18 @@ RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o 
 
 WORKDIR /app
 
+# Build args for version tracking
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIME=unknown
+ENV GIT_COMMIT=$GIT_COMMIT
+ENV BUILD_TIME=$BUILD_TIME
+
 # Install dependencies
 COPY package.json ./
 RUN npm install --production
 
-# Copy application
-COPY server.js auth.js wiki-update.js ./
+# Copy application (all JS files)
+COPY *.js ./
 
 # Create staging directory
 RUN mkdir -p /staging

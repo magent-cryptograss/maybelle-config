@@ -98,6 +98,14 @@
 
     # Docker Compose for IPFS + Pinning Service
     # Same as maybelle, just different URLs
+    - name: Get git commit hash
+      local_action:
+        module: command
+        cmd: git rev-parse --short HEAD
+        chdir: "{{ playbook_dir }}/../../"
+      register: git_commit
+      changed_when: false
+
     - name: Create docker-compose file
       copy:
         dest: /opt/pinning-service/docker-compose.yml
@@ -107,6 +115,9 @@
             pinning:
               build:
                 context: .
+                args:
+                  GIT_COMMIT: "{{ git_commit.stdout }}"
+                  BUILD_TIME: "{{ ansible_date_time.iso8601 }}"
               container_name: pinning-service
               environment:
                 - NODE_NAME=delivery-kid

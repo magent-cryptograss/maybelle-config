@@ -109,6 +109,21 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Version info - helps identify which build is running
+const GIT_COMMIT = process.env.GIT_COMMIT || 'unknown';
+const BUILD_TIME = process.env.BUILD_TIME || 'unknown';
+const START_TIME = new Date().toISOString();
+
+app.get('/version', (req, res) => {
+  res.json({
+    node: NODE_NAME,
+    commit: GIT_COMMIT,
+    buildTime: BUILD_TIME,
+    startTime: START_TIME,
+    uptimeSeconds: Math.floor(process.uptime())
+  });
+});
+
 // Server time endpoint - clients use this for auth timestamps to avoid clock drift issues
 app.get('/time', (req, res) => {
   res.json({ timestamp: Date.now() });

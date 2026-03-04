@@ -1115,6 +1115,14 @@
         dest: /mnt/persist/pinning-service/
         mode: '0644'
 
+    - name: Get git commit hash for pinning service
+      local_action:
+        module: command
+        cmd: git rev-parse --short HEAD
+        chdir: "{{ playbook_dir }}/../"
+      register: pinning_git_commit
+      changed_when: false
+
     - name: Create pinning service docker-compose file
       copy:
         dest: /mnt/persist/pinning-service/docker-compose.yml
@@ -1124,8 +1132,12 @@
             pinning:
               build:
                 context: .
+                args:
+                  GIT_COMMIT: "{{ pinning_git_commit.stdout }}"
+                  BUILD_TIME: "{{ ansible_date_time.iso8601 }}"
               container_name: pinning-service
               environment:
+                - NODE_NAME=maybelle
                 - PORT=3001
                 - PINATA_JWT={{ pinata_jwt }}
                 - AUTHORIZED_WALLETS={{ pinning_authorized_wallets }}
