@@ -215,10 +215,12 @@ export async function updateSubmissionCid(submissionId, ipfsCid) {
     };
   }
 
-  // Update the ipfs_cid field
+  // Update the ipfs_cid field and add status=proposed for bot verification
   let result;
   try {
     result = updateSubmissionField(currentContent, 'ipfs_cid', ipfsCid);
+    // Add status=proposed to satisfy PickiPedia bot edit requirements
+    result = updateSubmissionField(result.wikitext, 'status', 'proposed');
   } catch (err) {
     return {
       action: 'error',
