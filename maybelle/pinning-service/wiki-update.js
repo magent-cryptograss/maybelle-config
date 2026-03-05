@@ -102,15 +102,21 @@ async function getPageContent(title) {
 }
 
 /**
- * Update or add a field in a Blue Railroad Submission template.
+ * Update or add a field in a template.
+ * @param {string} wikitext - The page wikitext
+ * @param {string} templateName - Template name (e.g., 'Blue Railroad Submission', 'Album Submission')
+ * @param {string} fieldName - Field name to update
+ * @param {string} fieldValue - New field value
  */
-function updateSubmissionField(wikitext, fieldName, fieldValue) {
+function updateTemplateField(wikitext, templateName, fieldName, fieldValue) {
   // Pattern to match the template and capture its contents
-  const templatePattern = /(\{\{Blue Railroad Submission\s*)(.*?)(\}\})/is;
+  // Escape special regex chars in template name
+  const escapedName = templateName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const templatePattern = new RegExp(`(\\{\\{${escapedName}\\s*)(.*?)(\\}\\})`, 'is');
   const match = wikitext.match(templatePattern);
 
   if (!match) {
-    throw new Error('Could not find {{Blue Railroad Submission}} template in page');
+    throw new Error(`Could not find {{${templateName}}} template in page`);
   }
 
   const templateStart = match[1];
@@ -218,9 +224,9 @@ export async function updateSubmissionCid(submissionId, ipfsCid) {
   // Update the ipfs_cid field and add status=proposed for bot verification
   let result;
   try {
-    result = updateSubmissionField(currentContent, 'ipfs_cid', ipfsCid);
+    result = updateTemplateField(currentContent, 'Blue Railroad Submission', 'ipfs_cid', ipfsCid);
     // Add status=proposed to satisfy PickiPedia bot edit requirements
-    result = updateSubmissionField(result.wikitext, 'status', 'proposed');
+    result = updateTemplateField(result.wikitext, 'Blue Railroad Submission', 'status', 'proposed');
   } catch (err) {
     return {
       action: 'error',
@@ -349,5 +355,70 @@ export async function createReleasePage(metadata) {
     action: 'created',
     page_title: pageTitle,
     message: `Created release: ${metadata.title}`
+  };
+}
+
+/**
+ * Update an Album Submission page with IPFS CID after pinning.
+ * @param {number|string} submissionId - The submission number
+ * @param {string} ipfsCid - The IPFS CID for the directory
+ * @param {string} [ipfsCidLossless] - Optional separate CID for lossless files
+ * @returns {Object} Result with action and message
+ */
+export async function updateAlbumSubmissionCid(submissionId, ipfsCid, ipfsCidLossless = null) {
+  const pageTitle = `Album Submission/${submissionId}`;
+
+  console.log(`[wiki] Updating ${pageTitle} with IPFS CID: ${ipfsCid}`);
+
+  // Ensure we're logged in
+  if (!editToken) {
+    await login();
+  }
+
+  // Get current page content
+  const currentContent = await getPageContent(pageTitle);
+
+  if (!currentContent) {
+    return {
+      action: 'error',
+      message: `Page not found: ${pageTitle}`
+    };
+  }
+
+  // Update the ipfs_cid field
+  let result;
+  try {
+    result = updateTemplateField(currentContent, 'Album Submission', 'ipfs_cid', ipfsCid);
+
+    // Add lossless CID if provided
+    if (ipfsCidLossless) {
+      result = updateTemplateField(result.wikitext, 'Album Submission', 'ipfs_cid_lossless', ipfsCidLossless);
+    }
+
+    // Mark as pinned
+    result = updateTemplateField(result.wikitext, 'Album Submission', 'status', 'pinned');
+  } catch (err) {
+    return {
+      action: 'error',
+      message: err.message
+    };
+  }
+
+  if (!result.changed) {
+    return {
+      action: 'unchanged',
+      message: 'IPFS CID already set to this value'
+    };
+  }
+
+  // Save the updated page
+  const summary = `Pin album: ${ipfsCid.slice(0, 20)}... (via pinning service)`;
+  await savePage(pageTitle, result.wikitext, summary);
+
+  console.log(`[wiki] Updated ${pageTitle}`);
+
+  return {
+    action: 'updated',
+    message: `Updated ${pageTitle} with IPFS CID`
   };
 }

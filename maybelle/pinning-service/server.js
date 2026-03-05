@@ -1836,6 +1836,360 @@ app.post('/upload-album', requireWalletAuth, albumUpload.array('files', 50), asy
 });
 
 // =============================================================================
+// Album Staging and Pinning - Two-phase upload flow
+// =============================================================================
+
+const ALBUM_STAGING_DIR = join(STAGING_DIR, 'albums');
+
+// Ensure album staging directory exists
+try {
+  execSync(`mkdir -p "${ALBUM_STAGING_DIR}"`);
+} catch (e) {
+  console.warn('Could not create album staging directory:', e.message);
+}
+
+/**
+ * Stage album files for later pinning.
+ * Returns staging ID and file list for wiki submission creation.
+ */
+app.post('/stage-album', requireWalletAuth, albumUpload.array('files', 50), async (req, res) => {
+  const files = req.files;
+
+  if (!files || files.length === 0) {
+    return res.status(400).json({ error: 'No files uploaded' });
+  }
+
+  // Generate staging ID
+  const stagingId = `album-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const stagingPath = join(ALBUM_STAGING_DIR, stagingId);
+
+  try {
+    // Create staging directory
+    execSync(`mkdir -p "${stagingPath}"`);
+
+    // Validate and move files to staging
+    const stagedFiles = [];
+    for (const file of files) {
+      const mimeType = validateAudioFile(file.path);
+      if (!mimeType) {
+        // Cleanup and reject
+        for (const f of files) {
+          try { unlinkSync(f.path); } catch (e) { /* ignore */ }
+        }
+        try { execSync(`rm -rf "${stagingPath}"`); } catch (e) { /* ignore */ }
+        return res.status(400).json({
+          error: `Invalid audio file: ${file.originalname}`,
+          details: 'File must be FLAC, OGG, MP3, WAV, or AIFF'
+        });
+      }
+
+      // Move to staging with original filename
+      const safeFilename = sanitizeFilename(file.originalname);
+      const stagedPath = join(stagingPath, safeFilename);
+      copyFileSync(file.path, stagedPath);
+      unlinkSync(file.path);
+
+      stagedFiles.push({
+        filename: safeFilename,
+        originalName: file.originalname,
+        size: statSync(stagedPath).size,
+        mimeType
+      });
+    }
+
+    // Save staging metadata
+    const metadata = {
+      stagingId,
+      createdAt: new Date().toISOString(),
+      createdBy: req.verifiedAddress,
+      files: stagedFiles,
+      status: 'staged'
+    };
+    writeFileSync(join(stagingPath, '_metadata.json'), JSON.stringify(metadata, null, 2));
+
+    console.log(`[stage-album] Staged ${stagedFiles.length} files as ${stagingId}`);
+
+    res.json({
+      stagingId,
+      files: stagedFiles,
+      expiresIn: '24 hours',
+      message: 'Files staged. Create submission page on wiki, then trigger pin.'
+    });
+
+  } catch (error) {
+    console.error('[stage-album] Error:', error);
+    // Cleanup
+    for (const file of files) {
+      try { unlinkSync(file.path); } catch (e) { /* ignore */ }
+    }
+    try { execSync(`rm -rf "${stagingPath}"`); } catch (e) { /* ignore */ }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get info about staged album files.
+ */
+app.get('/stage-album/:stagingId', async (req, res) => {
+  const { stagingId } = req.params;
+  const stagingPath = join(ALBUM_STAGING_DIR, stagingId);
+  const metadataPath = join(stagingPath, '_metadata.json');
+
+  if (!existsSync(metadataPath)) {
+    return res.status(404).json({ error: 'Staging ID not found or expired' });
+  }
+
+  try {
+    const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+    res.json(metadata);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Pin a staged album using metadata from wiki submission page.
+ * Reads track listing from wiki, transcodes files, creates Release page.
+ */
+app.post('/pin-album/:submissionId', requireWalletAuth, async (req, res) => {
+  const { submissionId } = req.params;
+
+  // Set up SSE for progress
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const sendEvent = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  try {
+    sendEvent({ stage: 'reading-wiki', message: 'Reading submission from wiki...', progress: 5 });
+
+    // Fetch submission page from wiki
+    const pageTitle = `Album Submission/${submissionId}`;
+    const wikiUrl = process.env.WIKI_URL || 'https://pickipedia.xyz';
+    const response = await fetch(
+      `${wikiUrl}/api.php?action=query&titles=${encodeURIComponent(pageTitle)}&prop=revisions&rvprop=content&rvslots=main&format=json`
+    );
+    const data = await response.json();
+    const pages = data.query.pages;
+    const pageId = Object.keys(pages)[0];
+
+    if (pageId === '-1') {
+      sendEvent({ stage: 'error', message: `Submission page not found: ${pageTitle}` });
+      return res.end();
+    }
+
+    const wikitext = pages[pageId].revisions[0].slots.main['*'];
+
+    // Parse template parameters from wikitext
+    const titleMatch = wikitext.match(/\|title\s*=\s*([^\n\|]+)/);
+    const artistMatch = wikitext.match(/\|artist\s*=\s*([^\n\|]+)/);
+    const versionMatch = wikitext.match(/\|version\s*=\s*([^\n\|]+)/);
+    const stagingIdMatch = wikitext.match(/\|staging_id\s*=\s*([^\n\|]+)/);
+
+    const albumTitle = titleMatch ? titleMatch[1].trim() : 'Unknown Album';
+    const artist = artistMatch ? artistMatch[1].trim() : 'Unknown Artist';
+    const version = versionMatch ? versionMatch[1].trim() : '';
+    const stagingId = stagingIdMatch ? stagingIdMatch[1].trim() : null;
+
+    if (!stagingId) {
+      sendEvent({ stage: 'error', message: 'No staging_id found in submission' });
+      return res.end();
+    }
+
+    // Parse track listing
+    const trackMatches = wikitext.matchAll(/\{\{Album Track\s*\|([^}]+)\}\}/gi);
+    const tracks = [];
+    for (const match of trackMatches) {
+      const params = match[1];
+      const fileMatch = params.match(/file\s*=\s*([^\n\|]+)/);
+      const trackTitleMatch = params.match(/title\s*=\s*([^\n\|]+)/);
+      const trackNumMatch = params.match(/track_number\s*=\s*(\d+)/);
+
+      if (fileMatch) {
+        tracks.push({
+          file: fileMatch[1].trim(),
+          title: trackTitleMatch ? trackTitleMatch[1].trim() : '',
+          trackNumber: trackNumMatch ? parseInt(trackNumMatch[1]) : tracks.length + 1
+        });
+      }
+    }
+
+    sendEvent({ stage: 'parsed', message: `Found ${tracks.length} tracks`, progress: 10 });
+
+    // Load staging metadata
+    const stagingPath = join(ALBUM_STAGING_DIR, stagingId);
+    const metadataPath = join(stagingPath, '_metadata.json');
+
+    if (!existsSync(metadataPath)) {
+      sendEvent({ stage: 'error', message: 'Staging files not found or expired' });
+      return res.end();
+    }
+
+    const stagingMetadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+
+    // Create output directory for transcoded files
+    const outputDir = join(STAGING_DIR, `album-output-${Date.now()}`);
+    execSync(`mkdir -p "${outputDir}"`);
+
+    // Process each track
+    const processedTracks = [];
+    for (let i = 0; i < tracks.length; i++) {
+      const track = tracks[i];
+      const progress = 10 + (i / tracks.length) * 60;
+
+      sendEvent({
+        stage: 'transcoding',
+        message: `Processing track ${track.trackNumber}: ${track.title || track.file}`,
+        progress: Math.round(progress)
+      });
+
+      const inputPath = join(stagingPath, track.file);
+      if (!existsSync(inputPath)) {
+        console.warn(`[pin-album] Track file not found: ${track.file}`);
+        continue;
+      }
+
+      // Generate output filenames with track number prefix
+      const trackNum = String(track.trackNumber).padStart(2, '0');
+      const baseName = track.title ? sanitizeFilename(track.title) : track.file.replace(/\.[^.]+$/, '');
+      const oggFilename = `${trackNum}-${baseName}.ogg`;
+      const flacFilename = `${trackNum}-${baseName}.flac`;
+
+      // Copy FLAC to output (preserving lossless)
+      const flacOutput = join(outputDir, flacFilename);
+      copyFileSync(inputPath, flacOutput);
+
+      // Transcode to OGG
+      const oggOutput = join(outputDir, oggFilename);
+      try {
+        execSync(`ffmpeg -i "${inputPath}" -c:a libvorbis -q:a 6 -map_metadata 0 -y "${oggOutput}"`, {
+          stdio: 'pipe',
+          timeout: 300000
+        });
+      } catch (e) {
+        console.error(`[pin-album] Transcode failed for ${track.file}:`, e.message);
+        continue;
+      }
+
+      processedTracks.push({
+        trackNumber: track.trackNumber,
+        title: track.title || baseName,
+        oggFile: oggFilename,
+        flacFile: flacFilename
+      });
+    }
+
+    sendEvent({ stage: 'pinning', message: 'Pinning album directory to IPFS...', progress: 75 });
+
+    // Pin the entire output directory to IPFS
+    const files = readdirSync(outputDir);
+    const form = new FormData();
+    for (const filename of files) {
+      const filePath = join(outputDir, filename);
+      form.append('file', createReadStream(filePath), { filepath: filename });
+    }
+
+    const addResponse = await fetch(
+      `${IPFS_API_URL}/api/v0/add?recursive=true&wrap-with-directory=true&pin=true`,
+      { method: 'POST', body: form }
+    );
+
+    if (!addResponse.ok) {
+      throw new Error(`IPFS add failed: ${addResponse.status}`);
+    }
+
+    // Parse response to get directory CID
+    const addText = await addResponse.text();
+    const addLines = addText.trim().split('\n');
+    let directoryCid = null;
+    for (const line of addLines) {
+      const item = JSON.parse(line);
+      if (item.Name === '') {
+        directoryCid = item.Hash;
+      }
+    }
+
+    if (!directoryCid) {
+      throw new Error('Could not determine directory CID');
+    }
+
+    console.log(`[pin-album] Directory pinned: ${directoryCid}`);
+
+    sendEvent({ stage: 'pinning-pinata', message: 'Pinning to Pinata...', progress: 85 });
+
+    // Pin to Pinata
+    if (PINATA_JWT) {
+      try {
+        await fetch('https://api.pinata.cloud/pinning/pinByHash', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${PINATA_JWT}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            hashToPin: directoryCid,
+            pinataMetadata: {
+              name: `${albumTitle}${version ? ` (${version})` : ''}`,
+              keyvalues: { artist, version, type: 'album' }
+            }
+          })
+        });
+      } catch (e) {
+        console.warn('[pin-album] Pinata pin failed:', e.message);
+      }
+    }
+
+    sendEvent({ stage: 'creating-release', message: 'Creating Release page...', progress: 90 });
+
+    // Create Release page
+    let releaseResult = { action: 'skipped' };
+    if (isWikiConfigured()) {
+      releaseResult = await createReleasePage({
+        title: `${albumTitle}${version ? ` (${version})` : ''}`,
+        ipfs_cid: directoryCid,
+        artist: artist,
+        file_type: 'directory',
+        description: `Album: ${albumTitle} by ${artist}. ${processedTracks.length} tracks.`
+      });
+    }
+
+    sendEvent({ stage: 'updating-submission', message: 'Updating submission page...', progress: 95 });
+
+    // Update submission page with CID
+    if (isWikiConfigured()) {
+      const { updateAlbumSubmissionCid } = await import('./wiki-update.js');
+      const updateResult = await updateAlbumSubmissionCid(submissionId, directoryCid);
+      console.log(`[pin-album] ${updateResult.message}`);
+    }
+
+    // Cleanup
+    try { execSync(`rm -rf "${outputDir}"`); } catch (e) { /* ignore */ }
+    try { execSync(`rm -rf "${stagingPath}"`); } catch (e) { /* ignore */ }
+
+    sendEvent({
+      stage: 'complete',
+      message: 'Album pinned successfully!',
+      progress: 100,
+      cid: directoryCid,
+      tracks: processedTracks,
+      releasePageTitle: releaseResult.page_title,
+      gatewayUrl: `${IPFS_GATEWAY_URL}/ipfs/${directoryCid}`
+    });
+
+    res.end();
+
+  } catch (error) {
+    console.error('[pin-album] Error:', error);
+    sendEvent({ stage: 'error', message: error.message });
+    res.end();
+  }
+});
+
+// =============================================================================
 // Startup
 // =============================================================================
 
