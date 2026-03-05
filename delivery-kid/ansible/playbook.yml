@@ -85,10 +85,10 @@
         state: directory
         mode: '0755'
 
-    # Copy pinning service from maybelle (same code, different VPS)
+    # Copy pinning service (delivery-kid's own Python FastAPI service)
     - name: Copy pinning service files
       copy:
-        src: "{{ playbook_dir }}/../../maybelle/pinning-service/"
+        src: "{{ playbook_dir }}/../pinning-service/"
         dest: /opt/pinning-service/
         mode: '0644'
 
@@ -98,7 +98,6 @@
         state: present
 
     # Docker Compose for IPFS + Pinning Service
-    # Same as maybelle, just different URLs
     - name: Get git commit hash
       local_action:
         module: command
@@ -128,11 +127,6 @@
                 - IPFS_API_URL=http://ipfs:5001
                 - IPFS_GATEWAY_URL=https://{{ ipfs_gateway_domain }}
                 - STAGING_DIR=/staging
-                - WIKI_URL=https://pickipedia.xyz
-                - WIKI_BOT_USER={{ BLUERAILROAD_BOT_USERNAME }}
-                - WIKI_BOT_PASSWORD={{ BLUERAILROAD_BOT_PASSWORD }}
-                - COCONUT_API_KEY={{ coconut_api_key | default('') }}
-                - WEBHOOK_BASE_URL=https://{{ domain_name }}
               volumes:
                 - /mnt/storage-box/staging:/staging
               ports:
