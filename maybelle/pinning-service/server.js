@@ -2189,6 +2189,224 @@ app.post('/pin-album/:submissionId', requireWalletAuth, async (req, res) => {
   }
 });
 
+/**
+ * Direct album upload and pin - no wiki/staging step.
+ * Takes files and metadata directly from form, transcodes, pins, returns CID.
+ */
+app.post('/pin-album-direct', requireWalletAuth, albumUpload.array('files', 50), async (req, res) => {
+  // Set up SSE for progress
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+
+  const sendEvent = (data) => {
+    res.write(`data: ${JSON.stringify(data)}\n\n`);
+  };
+
+  let outputDir = null;
+
+  try {
+    const { title, artist, version, year, description } = req.body;
+    const trackMeta = JSON.parse(req.body.tracks || '[]');
+    const files = req.files || [];
+
+    if (!title || !artist) {
+      sendEvent({ stage: 'error', message: 'Title and artist are required' });
+      return res.end();
+    }
+
+    if (files.length === 0) {
+      sendEvent({ stage: 'error', message: 'No files uploaded' });
+      return res.end();
+    }
+
+    sendEvent({ stage: 'processing', message: `Processing ${files.length} tracks...`, progress: 5 });
+
+    // Create output directory
+    outputDir = join(STAGING_DIR, `album-direct-${Date.now()}`);
+    execSync(`mkdir -p "${outputDir}"`);
+
+    // Match uploaded files with track metadata
+    const processedTracks = [];
+    let totalSize = 0;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const meta = trackMeta.find(t => t.filename === file.originalname) || {
+        trackNumber: i + 1,
+        title: file.originalname.replace(/\.[^.]+$/, ''),
+        filename: file.originalname
+      };
+
+      const progress = 5 + (i / files.length) * 70;
+      sendEvent({
+        stage: 'transcoding',
+        message: `Processing track ${meta.trackNumber}: ${meta.title}`,
+        progress: Math.round(progress),
+        track: meta.title
+      });
+
+      const inputPath = file.path;
+      const ext = file.originalname.split('.').pop().toLowerCase();
+      const trackNum = String(meta.trackNumber).padStart(2, '0');
+      const baseName = sanitizeFilename(meta.title);
+
+      // If FLAC/WAV, transcode to OGG
+      if (['flac', 'wav'].includes(ext)) {
+        const oggFilename = `${trackNum}-${baseName}.ogg`;
+        const oggOutput = join(outputDir, oggFilename);
+
+        try {
+          execSync(`ffmpeg -i "${inputPath}" -c:a libvorbis -q:a 6 -map_metadata 0 -y "${oggOutput}"`, {
+            stdio: 'pipe',
+            timeout: 300000
+          });
+        } catch (e) {
+          console.error(`[pin-album-direct] Transcode failed for ${file.originalname}:`, e.message);
+          // Copy original as fallback
+          copyFileSync(inputPath, join(outputDir, `${trackNum}-${baseName}.${ext}`));
+        }
+
+        // Also copy FLAC for lossless preservation
+        if (ext === 'flac') {
+          const flacFilename = `${trackNum}-${baseName}.flac`;
+          copyFileSync(inputPath, join(outputDir, flacFilename));
+        }
+
+        processedTracks.push({
+          trackNumber: meta.trackNumber,
+          title: meta.title,
+          filename: oggFilename
+        });
+      } else {
+        // For MP3/OGG/M4A, just copy with standardized name
+        const outputFilename = `${trackNum}-${baseName}.${ext}`;
+        copyFileSync(inputPath, join(outputDir, outputFilename));
+
+        processedTracks.push({
+          trackNumber: meta.trackNumber,
+          title: meta.title,
+          filename: outputFilename
+        });
+      }
+
+      totalSize += file.size;
+
+      // Clean up uploaded temp file
+      try { unlinkSync(inputPath); } catch (e) { /* ignore */ }
+    }
+
+    sendEvent({ stage: 'pinning', message: 'Pinning album to IPFS...', progress: 80 });
+
+    // Pin the entire output directory to IPFS
+    const outputFiles = readdirSync(outputDir);
+    const form = new FormData();
+    for (const filename of outputFiles) {
+      const filePath = join(outputDir, filename);
+      form.append('file', createReadStream(filePath), { filepath: filename });
+    }
+
+    const addResponse = await fetch(
+      `${IPFS_API_URL}/api/v0/add?recursive=true&wrap-with-directory=true&pin=true`,
+      { method: 'POST', body: form }
+    );
+
+    if (!addResponse.ok) {
+      throw new Error(`IPFS add failed: ${addResponse.status}`);
+    }
+
+    // Parse response to get directory CID
+    const addText = await addResponse.text();
+    const addLines = addText.trim().split('\n');
+    let directoryCid = null;
+    for (const line of addLines) {
+      const item = JSON.parse(line);
+      if (item.Name === '') {
+        directoryCid = item.Hash;
+      }
+    }
+
+    if (!directoryCid) {
+      throw new Error('Could not determine directory CID');
+    }
+
+    console.log(`[pin-album-direct] Directory pinned: ${directoryCid}`);
+
+    sendEvent({ stage: 'pinning-pinata', message: 'Pinning to Pinata...', progress: 90 });
+
+    // Pin to Pinata
+    let pinnedToPinata = false;
+    if (PINATA_JWT) {
+      try {
+        await fetch('https://api.pinata.cloud/pinning/pinByHash', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${PINATA_JWT}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            hashToPin: directoryCid,
+            pinataMetadata: {
+              name: `${title}${version ? ` (${version})` : ''}`,
+              keyvalues: { artist, version: version || '', year: year || '', type: 'album' }
+            }
+          })
+        });
+        pinnedToPinata = true;
+      } catch (e) {
+        console.warn('[pin-album-direct] Pinata pin failed:', e.message);
+      }
+    }
+
+    // Optionally create Release page on wiki
+    let releasePageTitle = null;
+    if (isWikiConfigured() && req.query.createRelease !== 'false') {
+      sendEvent({ stage: 'creating-release', message: 'Creating Release page...', progress: 95 });
+      try {
+        const releaseResult = await createReleasePage({
+          title: `${title}${version ? ` (${version})` : ''}`,
+          ipfs_cid: directoryCid,
+          artist: artist,
+          file_type: 'directory',
+          description: description || `Album: ${title} by ${artist}. ${processedTracks.length} tracks.`
+        });
+        releasePageTitle = releaseResult.page_title;
+      } catch (e) {
+        console.warn('[pin-album-direct] Release page creation failed:', e.message);
+      }
+    }
+
+    // Cleanup
+    try { execSync(`rm -rf "${outputDir}"`); } catch (e) { /* ignore */ }
+
+    sendEvent({
+      stage: 'complete',
+      message: 'Album pinned successfully!',
+      progress: 100,
+      cid: directoryCid,
+      tracks: processedTracks,
+      totalSize,
+      pinnedToPinata,
+      releasePageTitle,
+      gatewayUrl: `${IPFS_GATEWAY_URL}/ipfs/${directoryCid}`
+    });
+
+    res.end();
+
+  } catch (error) {
+    console.error('[pin-album-direct] Error:', error);
+    sendEvent({ stage: 'error', message: error.message });
+
+    // Cleanup on error
+    if (outputDir) {
+      try { execSync(`rm -rf "${outputDir}"`); } catch (e) { /* ignore */ }
+    }
+
+    res.end();
+  }
+});
+
 // =============================================================================
 // Startup
 // =============================================================================
