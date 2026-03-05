@@ -177,9 +177,9 @@ async def pin_album_direct(
 
 
 @router.get("/local-pins")
-async def list_local_pins(
-    wallet_address: str = Depends(require_wallet_auth)
-):
-    """List all locally pinned CIDs."""
-    pins = await ipfs.get_local_pins()
-    return {"pins": pins, "count": len(pins)}
+async def list_local_pins():
+    """List all locally pinned CIDs. Public endpoint for build-time fetching."""
+    cids = await ipfs.get_local_pins()
+    # Return as objects with 'cid' property for arthel compatibility
+    pins = [{"cid": cid} for cid in cids]
+    return {"pins": pins, "count": len(pins), "node": "delivery-kid"}
