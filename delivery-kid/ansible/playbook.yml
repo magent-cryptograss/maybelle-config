@@ -76,8 +76,8 @@
       loop:
         - /mnt/storage-box/ipfs
         - /mnt/storage-box/ipfs/blocks
-        - /var/lib/ipfs          # Local metadata
-        - /var/lib/ipfs/staging
+        - /mnt/storage-box/staging  # Temp files for uploads/transcoding
+        - /var/lib/ipfs             # Local metadata only
 
     - name: Create pinning service directory
       file:
@@ -134,7 +134,7 @@
                 - COCONUT_API_KEY={{ coconut_api_key | default('') }}
                 - WEBHOOK_BASE_URL=https://{{ domain_name }}
               volumes:
-                - /var/lib/ipfs/staging:/staging
+                - /mnt/storage-box/staging:/staging
               ports:
                 - "127.0.0.1:3001:3001"
               networks:
@@ -149,7 +149,7 @@
               volumes:
                 - /var/lib/ipfs:/data/ipfs
                 - /mnt/storage-box/ipfs/blocks:/data/ipfs/blocks
-                - /var/lib/ipfs/staging:/export
+                - /mnt/storage-box/staging:/export
               ports:
                 - "127.0.0.1:5001:5001"  # API
                 - "127.0.0.1:8080:8080"  # Gateway
