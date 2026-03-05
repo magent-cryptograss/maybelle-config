@@ -160,11 +160,20 @@
               external: true
               name: delivery-kid-net
 
+    # Force rebuild with --no-cache when --rebuild flag is passed
+    # This ensures code changes are picked up (Docker layer caching can skip new files)
+    - name: Build pinning service with no cache
+      command: docker compose build --no-cache
+      args:
+        chdir: /opt/pinning-service
+      when: rebuild_images | default(false) | bool
+
     - name: Start services
       community.docker.docker_compose_v2:
         project_src: /opt/pinning-service
         build: always
         state: present
+        recreate: "{{ 'always' if (rebuild_images | default(false) | bool) else 'auto' }}"
 
     # Wait for IPFS container to be running (not API - that won't work until configured)
     - name: Wait for IPFS container to start

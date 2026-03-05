@@ -8,8 +8,9 @@ This script:
 3. The deploy script on maybelle handles ansible
 
 Usage:
-    ./deploy-delivery-kid-remote.py           # Normal deploy
-    ./deploy-delivery-kid-remote.py --fresh-host  # Fresh server (resets SSH keys)
+    ./deploy-delivery-kid-remote.py              # Normal deploy
+    ./deploy-delivery-kid-remote.py --rebuild    # Force Docker image rebuild (--no-cache)
+    ./deploy-delivery-kid-remote.py --fresh-host # Fresh server (resets SSH keys)
 
 Prerequisites:
 - SSH access to maybelle from your laptop
@@ -42,11 +43,14 @@ def get_vault_password():
 def main():
     # Parse arguments
     fresh_host = '--fresh-host' in sys.argv
+    rebuild = '--rebuild' in sys.argv
 
     print("=" * 60)
     print("DEPLOY DELIVERY-KID VIA MAYBELLE")
     if fresh_host:
         print("(FRESH HOST - will reset SSH keys)")
+    if rebuild:
+        print("(REBUILD - will rebuild Docker images with --no-cache)")
     print("=" * 60)
     print()
 
@@ -85,10 +89,12 @@ def main():
     maybelle = 'root@maybelle.cryptograss.live'
     deploy_script = '/mnt/persist/maybelle-config/maybelle/scripts/deploy-delivery-kid.sh'
 
-    # Pass --fresh-host flag to the remote script
+    # Pass flags to the remote script
     script_args = f'{deploy_script} {local_user}'
     if fresh_host:
         script_args += ' --fresh-host'
+    if rebuild:
+        script_args += ' --rebuild'
 
     result = subprocess.run(
         ['ssh', '-t', maybelle, script_args],

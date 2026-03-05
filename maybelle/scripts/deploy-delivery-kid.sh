@@ -14,6 +14,7 @@ set -o pipefail
 
 DEPLOY_USER="${1:-remote}"
 FRESH_HOST=false
+REBUILD=false
 REPO_DIR="/mnt/persist/maybelle-config"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 LOG_FILE="/mnt/persist/logs/delivery-kid-deploy-${TIMESTAMP}.log"
@@ -22,17 +23,29 @@ DELIVERY_KID_HOST="delivery-kid.cryptograss.live"
 DELIVERY_KID_IP="46.62.220.103"
 
 # Parse arguments
-if [ "$2" = "--fresh-host" ] || [ "$1" = "--fresh-host" ]; then
-    FRESH_HOST=true
-    if [ "$1" = "--fresh-host" ]; then
-        DEPLOY_USER="remote"
-    fi
+for arg in "$@"; do
+    case "$arg" in
+        --fresh-host)
+            FRESH_HOST=true
+            ;;
+        --rebuild)
+            REBUILD=true
+            ;;
+    esac
+done
+
+# If only flags were passed, use default user
+if [[ "$1" == --* ]]; then
+    DEPLOY_USER="remote"
 fi
 
 echo "============================================================"
 echo "DEPLOY DELIVERY-KID FROM MAYBELLE"
 if [ "$FRESH_HOST" = true ]; then
     echo "(FRESH HOST - will reset SSH keys)"
+fi
+if [ "$REBUILD" = true ]; then
+    echo "(REBUILD - will rebuild Docker images with --no-cache)"
 fi
 echo "============================================================"
 echo ""
@@ -114,8 +127,13 @@ START_TIME=$(date +%s)
 
 cd "$REPO_DIR/delivery-kid/ansible"
 
-# Run ansible playbook
-ANSIBLE_CMD="ansible-playbook --vault-password-file=\"$VAULT_FILE\" -i inventory.yml playbook.yml"
+# Build ansible command with optional rebuild flag
+EXTRA_VARS=""
+if [ "$REBUILD" = true ]; then
+    EXTRA_VARS="-e rebuild_images=true"
+fi
+
+ANSIBLE_CMD="ansible-playbook --vault-password-file=\"$VAULT_FILE\" -i inventory.yml playbook.yml $EXTRA_VARS"
 
 if bash -c "$ANSIBLE_CMD" 2>&1 | tee "$LOG_FILE"; then
     DEPLOY_STATUS="success"
