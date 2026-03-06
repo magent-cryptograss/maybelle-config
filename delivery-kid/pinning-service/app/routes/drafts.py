@@ -263,9 +263,10 @@ async def finalize_sse_generator(
 
         # Copy and rename files according to track order
         # Also build mapping from new filename to track info for transcoding
-        has_flac = False
+        has_flac = False  # True if user uploaded FLAC files (need FLAC→OGG)
+        has_wav = False   # True if user uploaded WAV files (need WAV→FLAC and WAV→OGG)
         flac_to_track_info = {}  # Maps new FLAC filename -> FinalizeTrack
-        wav_to_convert = []  # List of (src_wav, dest_flac, track_info) tuples
+        wav_to_convert = []  # List of (src_wav, dest_flac, dest_ogg, track_info) tuples
         for idx, filename in enumerate(ordered_files, start=1):
             src_path = upload_dir / filename
             if not src_path.exists():
@@ -289,10 +290,11 @@ async def finalize_sse_generator(
                 shutil.copy2(src_path, flac_dir / dest_name)
                 flac_to_track_info[dest_name] = track_info
             elif ext == ".wav":
-                # WAV files need to be converted to FLAC first
-                has_flac = True
-                dest_name = f"{track_num}-{safe_title}.flac"
-                wav_to_convert.append((src_path, flac_dir / dest_name, track_info))
+                # WAV files: convert to FLAC (archive) and OGG (streaming) directly
+                has_wav = True
+                flac_dest = f"{track_num}-{safe_title}.flac"
+                ogg_dest = f"{track_num}-{safe_title}.ogg"
+                wav_to_convert.append((src_path, flac_dir / flac_dest, ogg_dir / ogg_dest, track_info))
             elif ext in {".jpg", ".jpeg", ".png", ".webp"}:
                 # Cover art goes to album root
                 shutil.copy2(src_path, album_dir / "cover" + ext)
@@ -301,31 +303,49 @@ async def finalize_sse_generator(
                 dest_name = f"{track_num}-{safe_title}{ext}"
                 shutil.copy2(src_path, ogg_dir / dest_name)
 
-        # Convert WAV files to FLAC
+        # Convert WAV files to FLAC (archive) and OGG (streaming) directly
         if wav_to_convert:
             yield await send_event("progress", {
-                "stage": "wav_to_flac",
-                "message": "Converting WAV to FLAC...",
+                "stage": "wav_convert",
+                "message": "Converting WAV files...",
                 "progress": 10
             })
 
-            for i, (wav_path, flac_path, track_info) in enumerate(wav_to_convert):
+            for i, (wav_path, flac_path, ogg_path, track_info) in enumerate(wav_to_convert):
+                base_progress = 10 + int((i / len(wav_to_convert)) * 25)
+
+                # Extract track number from filename for metadata
+                track_num_str = flac_path.stem.split("-")[0] if "-" in flac_path.stem else str(i + 1)
+                track_title = "-".join(flac_path.stem.split("-")[1:]) if "-" in flac_path.stem else flac_path.stem
+
+                # Build metadata for this track
+                track_metadata = {
+                    "ARTIST": request.artist,
+                    "ALBUM": request.album_title,
+                    "TITLE": track_title,
+                    "TRACKNUMBER": track_num_str,
+                }
+                if request.year:
+                    track_metadata["DATE"] = request.year
+                if track_info and track_info.tags:
+                    track_metadata.update(track_info.tags)
+
+                # Convert WAV to FLAC (lossless archive)
                 yield await send_event("progress", {
-                    "stage": "wav_to_flac",
+                    "stage": "wav_convert",
                     "message": f"Converting {wav_path.name} to FLAC...",
-                    "progress": 10 + int((i / len(wav_to_convert)) * 10),
+                    "progress": base_progress,
                     "track": wav_path.name
                 })
 
-                # Use ffmpeg to convert WAV to FLAC (lossless)
-                cmd = [
+                flac_cmd = [
                     "ffmpeg", "-y", "-i", str(wav_path),
                     "-c:a", "flac",
                     "-compression_level", "8",
                     str(flac_path)
                 ]
                 proc = await asyncio.create_subprocess_exec(
-                    *cmd,
+                    *flac_cmd,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
@@ -335,9 +355,31 @@ async def finalize_sse_generator(
                     yield await send_event("warning", {
                         "message": f"Failed to convert {wav_path.name} to FLAC: {stderr.decode()[:200]}"
                     })
-                else:
-                    # Add to track info mapping for metadata embedding
-                    flac_to_track_info[flac_path.name] = track_info
+
+                # Convert WAV to OGG directly (with metadata)
+                yield await send_event("progress", {
+                    "stage": "wav_convert",
+                    "message": f"Converting {wav_path.name} to OGG...",
+                    "progress": base_progress + 5,
+                    "track": wav_path.name
+                })
+
+                ogg_cmd = ["ffmpeg", "-y", "-i", str(wav_path), "-c:a", "libvorbis", "-q:a", "6"]
+                for key, value in track_metadata.items():
+                    ogg_cmd.extend(["-metadata", f"{key}={value}"])
+                ogg_cmd.append(str(ogg_path))
+
+                proc = await asyncio.create_subprocess_exec(
+                    *ogg_cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                _, stderr = await proc.communicate()
+
+                if proc.returncode != 0:
+                    yield await send_event("warning", {
+                        "message": f"Failed to convert {wav_path.name} to OGG: {stderr.decode()[:200]}"
+                    })
 
         # Transcode FLAC files to OGG
         if has_flac:
@@ -353,6 +395,10 @@ async def finalize_sse_generator(
             for i, flac_path in enumerate(flac_files):
                 ogg_name = flac_path.stem + ".ogg"
                 ogg_path = ogg_dir / ogg_name
+
+                # Skip if OGG already exists (e.g., from WAV→OGG conversion)
+                if ogg_path.exists():
+                    continue
 
                 # Extract track number and title from filename (format: "01-Title.flac")
                 track_num_str = flac_path.stem.split("-")[0] if "-" in flac_path.stem else str(i + 1)
