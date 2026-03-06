@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     max_file_size_mb: int = 500
     max_files_per_upload: int = 50
 
+    # Draft settings
+    draft_ttl_hours: int = 24  # How long drafts live before auto-cleanup
+    max_staging_size_gb: int = 10  # Maximum total size of staging directory
+
     # CORS
     cors_origins: list[str] = [
         "https://cryptograss.live",
