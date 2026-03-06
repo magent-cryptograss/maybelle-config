@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     max_timestamp_drift_seconds: int = 600  # 10 minutes
 
     # Upload limits
-    max_file_size_mb: int = 500
+    max_file_size_mb: int = 50000  # 50GB - effectively no limit for albums
     max_files_per_upload: int = 50
 
     # Draft settings

@@ -18,6 +18,7 @@ async def transcode_flac_to_ogg(
     input_path: Path,
     output_path: Path,
     quality: int = 6,
+    metadata: Optional[dict[str, str]] = None,
     progress_callback: Optional[Callable[[str], Awaitable[None]]] = None
 ) -> TranscodeResult:
     """
@@ -27,6 +28,7 @@ async def transcode_flac_to_ogg(
         input_path: Path to input FLAC file
         output_path: Path for output OGG file
         quality: OGG quality (0-10, default 6 ≈ 192kbps)
+        metadata: Optional dict of metadata tags to embed (KEY: VALUE)
         progress_callback: Optional async callback for progress updates
 
     Returns:
@@ -46,13 +48,26 @@ async def transcode_flac_to_ogg(
         await progress_callback(f"Transcoding {input_path.name}")
 
     try:
-        process = await asyncio.create_subprocess_exec(
+        # Build ffmpeg command
+        cmd = [
             "ffmpeg",
             "-i", str(input_path),
             "-c:a", "libvorbis",
             "-q:a", str(quality),
+        ]
+
+        # Add metadata tags
+        if metadata:
+            for key, value in metadata.items():
+                cmd.extend(["-metadata", f"{key}={value}"])
+
+        cmd.extend([
             "-y",  # Overwrite output
-            str(output_path),
+            str(output_path)
+        ])
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )

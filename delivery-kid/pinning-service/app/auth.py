@@ -56,11 +56,8 @@ def verify_signature(signature: str, timestamp: int, settings: Settings) -> Auth
     # Check if address is authorized
     authorized = settings.authorized_wallet_list
     if not authorized:
-        return AuthResult(
-            valid=False,
-            address=address,
-            error="No authorized wallets configured"
-        )
+        # Dev mode: empty list means allow all wallets
+        return AuthResult(valid=True, address=address)
 
     if address.lower() not in authorized:
         return AuthResult(

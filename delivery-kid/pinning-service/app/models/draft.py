@@ -37,6 +37,7 @@ class FinalizeTrack(BaseModel):
     """Track information for finalization request."""
     filename: str = Field(description="Original filename to identify the track")
     title: str = Field(description="User-edited title for the track")
+    tags: Optional[dict[str, str]] = Field(default=None, description="Per-track tags (COMPOSER, COMMENT, etc.)")
 
 
 class FinalizeRequest(BaseModel):
@@ -45,4 +46,5 @@ class FinalizeRequest(BaseModel):
     artist: str
     year: Optional[str] = None
     description: Optional[str] = None
+    tags: Optional[dict[str, str]] = Field(default=None, description="Custom tags to embed in audio files (KEY=VALUE)")
     tracks: list[FinalizeTrack] = Field(description="Tracks in desired order")

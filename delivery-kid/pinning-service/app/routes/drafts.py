@@ -250,8 +250,8 @@ async def finalize_sse_generator(
         flac_dir.mkdir(exist_ok=True)
         ogg_dir.mkdir(exist_ok=True)
 
-        # Build track mapping from request order
-        track_map = {t.filename: t.title for t in request.tracks}
+        # Build track mapping from request order (includes title and per-track tags)
+        track_map = {t.filename: t for t in request.tracks}
         ordered_files = [t.filename for t in request.tracks]
 
         yield await send_event("progress", {
@@ -261,7 +261,9 @@ async def finalize_sse_generator(
         })
 
         # Copy and rename files according to track order
+        # Also build mapping from new filename to track info for transcoding
         has_flac = False
+        flac_to_track_info = {}  # Maps new FLAC filename -> FinalizeTrack
         for idx, filename in enumerate(ordered_files, start=1):
             src_path = upload_dir / filename
             if not src_path.exists():
@@ -272,7 +274,8 @@ async def finalize_sse_generator(
 
             ext = src_path.suffix.lower()
             track_num = f"{idx:02d}"
-            title = track_map.get(filename, filename)
+            track_info = track_map.get(filename)
+            title = track_info.title if track_info else filename
 
             # Sanitize title for filename
             safe_title = "".join(c if c.isalnum() or c in " -_" else "" for c in title)
@@ -282,6 +285,7 @@ async def finalize_sse_generator(
                 has_flac = True
                 dest_name = f"{track_num}-{safe_title}.flac"
                 shutil.copy2(src_path, flac_dir / dest_name)
+                flac_to_track_info[dest_name] = track_info
             elif ext in {".jpg", ".jpeg", ".png", ".webp"}:
                 # Cover art goes to album root
                 shutil.copy2(src_path, album_dir / "cover" + ext)
@@ -305,6 +309,26 @@ async def finalize_sse_generator(
                 ogg_name = flac_path.stem + ".ogg"
                 ogg_path = ogg_dir / ogg_name
 
+                # Extract track number and title from filename (format: "01-Title.flac")
+                track_num_str = flac_path.stem.split("-")[0] if "-" in flac_path.stem else str(i + 1)
+                track_title = "-".join(flac_path.stem.split("-")[1:]) if "-" in flac_path.stem else flac_path.stem
+
+                # Get per-track info for tags
+                this_track_info = flac_to_track_info.get(flac_path.name)
+
+                # Build metadata for this track
+                track_metadata = {
+                    "ARTIST": request.artist,
+                    "ALBUM": request.album_title,
+                    "TITLE": track_title,
+                    "TRACKNUMBER": track_num_str,
+                }
+                if request.year:
+                    track_metadata["DATE"] = request.year
+                # Add per-track custom tags
+                if this_track_info and this_track_info.tags:
+                    track_metadata.update(this_track_info.tags)
+
                 yield await send_event("progress", {
                     "stage": "transcode",
                     "message": f"Transcoding {flac_path.name}...",
@@ -312,7 +336,7 @@ async def finalize_sse_generator(
                     "track": flac_path.name
                 })
 
-                result = await transcode.transcode_flac_to_ogg(flac_path, ogg_path)
+                result = await transcode.transcode_flac_to_ogg(flac_path, ogg_path, metadata=track_metadata)
 
                 if not result.success:
                     yield await send_event("warning", {
