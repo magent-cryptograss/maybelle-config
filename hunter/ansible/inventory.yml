@@ -46,3 +46,13 @@ all:
         port_range_start: 14020
         code_server_password: "{{ skyler_vscode_password | default('change-me-skyler') }}"
         github_token: "{{ magent_github_token }}"
+
+      - name: fibonacci
+        full_name: "Fibonacci Emery Holmes"
+        email: "fibonacci@justinholmes.com"
+        github_username: "fibonacci-frames"
+        ssh_pubkey: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOlf87hTbZhfhX0IbeMvs97DikhFbw92ZaMqg134uSbb fibonacci@fibonacci-Latitude-5410"
+        ssh_port: 2225
+        port_range_start: 14030
+        code_server_password: "{{ fibonacci_vscode_password | default('change-me-fibonacci') }}"
+        github_token: "{{ magent_github_token }}"
