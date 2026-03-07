@@ -50,7 +50,29 @@ if [ -z "$USER" ]; then
     exit 1
 fi
 
-CONTAINER="${USER}-arthel"
+# Valid usernames for cross-container access
+VALID_USERS=({% for user in users %}"{{ user.name }}" {% endfor %})
+
+is_valid_user() {
+    for u in "${VALID_USERS[@]}"; do
+        [ "$u" = "$1" ] && return 0
+    done
+    return 1
+}
+
+TARGET_USER="$USER"
+
+# If SSH_ORIGINAL_COMMAND is a valid username, route to that container instead
+if [ -n "$SSH_ORIGINAL_COMMAND" ] && is_valid_user "$SSH_ORIGINAL_COMMAND"; then
+    TARGET_USER="$SSH_ORIGINAL_COMMAND"
+    if [ "$TARGET_USER" = "$USER" ]; then
+        echo "That's your own container - connecting normally."
+    else
+        echo "Joining ${TARGET_USER}'s container in multiplayer mode..."
+    fi
+fi
+
+CONTAINER="${TARGET_USER}-arthel"
 
 # Check if container exists and is running
 if ! docker ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -q "^${CONTAINER}$"; then
@@ -58,10 +80,13 @@ if ! docker ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -q "^${CONTAINE
     exit 1
 fi
 
-# If SSH_ORIGINAL_COMMAND is set, execute it in the container
-# Otherwise, start an interactive shell
-if [ -n "$SSH_ORIGINAL_COMMAND" ]; then
+# If routing to another user's container, attach to shared tmux session
+if [ "$TARGET_USER" != "$USER" ]; then
+    docker exec -it "$CONTAINER" su - magent -c "tmux new-session -A -s shared"
+# If SSH_ORIGINAL_COMMAND is set (and wasn't a username), execute it
+elif [ -n "$SSH_ORIGINAL_COMMAND" ]; then
     docker exec -it "$CONTAINER" su - magent -c "$SSH_ORIGINAL_COMMAND"
+# Otherwise, start an interactive shell
 else
     docker exec -it "$CONTAINER" su - magent
 fi
