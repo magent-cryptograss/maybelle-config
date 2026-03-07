@@ -21,12 +21,13 @@
           env_file: .env
           environment:
             - DJANGO_SETTINGS_MODULE=memory_viewer.settings
-            - CLAUDE_LOGS_DIR=/project-logs/justin:/project-logs/rj:/project-logs/skyler
+            - CLAUDE_LOGS_DIR={% for user in users %}/project-logs/{{ user.name }}{% if not loop.last %}:{% endif %}{% endfor %}
+
             - WATCHER_ERA_NAME=Live Conversations
           volumes:
-            - /opt/magenta/justin/home/.claude/projects:/project-logs/justin:ro
-            - /opt/magenta/rj/home/.claude/projects:/project-logs/rj:ro
-            - /opt/magenta/skyler/home/.claude/projects:/project-logs/skyler:ro
+      {% for user in users %}
+            - /opt/magenta/{{ user.name }}/home/.claude/projects:/project-logs/{{ user.name }}:ro
+      {% endfor %}
           restart: unless-stopped
           command: python watcher/conversation_watcher.py
     mode: '0644'

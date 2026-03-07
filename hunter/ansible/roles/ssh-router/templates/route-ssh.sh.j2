@@ -80,13 +80,10 @@ if ! docker ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -q "^${CONTAINE
     exit 1
 fi
 
-# If routing to another user's container, attach to shared tmux session
-if [ "$TARGET_USER" != "$USER" ]; then
-    docker exec -it "$CONTAINER" su - magent -c "tmux new-session -A -s shared"
 # If SSH_ORIGINAL_COMMAND is set (and wasn't a username), execute it
-elif [ -n "$SSH_ORIGINAL_COMMAND" ]; then
+if [ -n "$SSH_ORIGINAL_COMMAND" ] && [ "$TARGET_USER" = "$USER" ]; then
     docker exec -it "$CONTAINER" su - magent -c "$SSH_ORIGINAL_COMMAND"
-# Otherwise, start an interactive shell
+# Otherwise, attach to shared tmux session (multiplayer by default)
 else
-    docker exec -it "$CONTAINER" su - magent
+    docker exec -it "$CONTAINER" su - magent -c "tmux new-session -A -s shared"
 fi
