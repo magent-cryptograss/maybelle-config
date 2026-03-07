@@ -28,7 +28,11 @@ RUN echo "# Enable mouse support" > /etc/tmux.conf && \
     echo "set -g mouse on" >> /etc/tmux.conf && \
     echo "" >> /etc/tmux.conf && \
     echo "# Increase scrollback buffer size" >> /etc/tmux.conf && \
-    echo "set -g history-limit 10000" >> /etc/tmux.conf
+    echo "set -g history-limit 10000" >> /etc/tmux.conf && \
+    echo "" >> /etc/tmux.conf && \
+    echo "# Multiplayer: size window to most recently active client" >> /etc/tmux.conf && \
+    echo "set -g window-size latest" >> /etc/tmux.conf && \
+    echo "setw -g aggressive-resize on" >> /etc/tmux.conf
 
 # Install Claude tools and Playwright globally (as root)
 RUN npm install -g @anthropic-ai/sdk @anthropic-ai/claude-code playwright
