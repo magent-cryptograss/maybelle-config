@@ -90,5 +90,5 @@ if [ -n "$SSH_ORIGINAL_COMMAND" ] && [ "$TARGET_USER" = "$USER" ]; then
     docker exec -it "$CONTAINER" su - magent -c "$SSH_ORIGINAL_COMMAND"
 # Otherwise, attach to tmux session (default: magenta)
 else
-    docker exec -it "$CONTAINER" su - magent -c "tmux new-session -t $TARGET_SESSION -s ${TARGET_SESSION}-\$(date +%s) 2>/dev/null || tmux new-session -A -s $TARGET_SESSION"
+    docker exec -it "$CONTAINER" su - magent -c "tmux new-session -A -s $TARGET_SESSION"
 fi
