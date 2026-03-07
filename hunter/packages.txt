@@ -36,6 +36,7 @@ tree
 netcat-openbsd
 iproute2
 tmux
+tmate
 screen
 mosh
 imagemagick
