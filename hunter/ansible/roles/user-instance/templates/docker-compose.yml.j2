@@ -48,6 +48,8 @@ services:
       - BLUERAILROAD_BOT_PASSWORD={{ BLUERAILROAD_BOT_PASSWORD | default('') }}
       # Sentry/GlitchTip DSN for PickiPedia dev error tracking
       - PICKIPEDIA_DEV_SENTRY_DSN={{ pickipedia_dev_sentry_dsn | default('') }}
+      # Delivery-kid pinning service API key
+      - DELIVERY_KID_API_KEY={{ delivery_kid_api_key }}
     restart: unless-stopped
 
 networks:

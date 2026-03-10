@@ -480,7 +480,9 @@ def start_pickipedia_preview():
     # Start docker-compose with host path for volumes
     logger.info(f"Starting PickiPedia containers for {dev_name}...")
     result = run_command(
-        f"PICKIPEDIA_DIR={host_pickipedia_dir} docker compose up -d",
+        f"PICKIPEDIA_DIR={host_pickipedia_dir}"
+        f" DELIVERY_KID_API_KEY={os.environ.get('DELIVERY_KID_API_KEY', '')}"
+        f" docker compose up -d",
         cwd=pickipedia_dir,
         check=False
     )
