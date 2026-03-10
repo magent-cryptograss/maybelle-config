@@ -83,6 +83,9 @@
 
       # Sentry/GlitchTip error tracking
       $wgSentryDsn = "{{ glitchtip_dsn_response.content | trim }}";
+
+      # Delivery-kid pinning service API key
+      $wgDeliveryKidApiKey = "{{ delivery_kid_api_key }}";
     owner: www-data
     group: www-data
     mode: '0600'
