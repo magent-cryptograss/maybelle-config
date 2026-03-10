@@ -124,6 +124,7 @@
                 - PORT=3001
                 - PINATA_JWT={{ pinata_jwt }}
                 - AUTHORIZED_WALLETS={{ pinning_authorized_wallets }}
+                - API_KEY={{ delivery_kid_api_key }}
                 - IPFS_API_URL=http://ipfs:5001
                 - IPFS_GATEWAY_URL=https://{{ ipfs_gateway_domain }}
                 - STAGING_DIR=/staging
