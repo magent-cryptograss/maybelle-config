@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
-from ..auth import require_wallet_auth
+from ..auth import require_auth
 from ..config import get_settings, Settings
 from ..models.content import (
     ContentFile, ContentDraftState, ContentDraftResponse, ContentFinalizeRequest
@@ -57,7 +57,7 @@ def is_draft_expired(state: ContentDraftState) -> bool:
 @router.post("", response_model=ContentDraftResponse)
 async def create_content_draft(
     files: list[UploadFile] = File(...),
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """
@@ -163,7 +163,7 @@ async def create_content_draft(
 @router.get("/{draft_id}", response_model=ContentDraftResponse)
 async def get_content_draft(
     draft_id: str,
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """Retrieve content draft state by ID."""
@@ -192,7 +192,7 @@ async def get_content_draft(
 @router.delete("/{draft_id}")
 async def delete_content_draft(
     draft_id: str,
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """Delete a content draft and clean up files."""
@@ -346,7 +346,7 @@ async def finalize_sse_generator(
 async def finalize_content_draft(
     draft_id: str,
     request: ContentFinalizeRequest,
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """

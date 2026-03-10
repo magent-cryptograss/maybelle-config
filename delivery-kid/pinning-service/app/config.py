@@ -24,6 +24,7 @@ class Settings(BaseSettings):
 
     # Auth settings
     max_timestamp_drift_seconds: int = 600  # 10 minutes
+    api_key: str = ""  # Shared API key for server-to-server auth (e.g., from PickiPedia)
 
     # Upload limits
     max_file_size_mb: int = 50000  # 50GB - effectively no limit for albums
