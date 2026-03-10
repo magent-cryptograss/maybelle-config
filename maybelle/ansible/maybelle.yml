@@ -508,6 +508,9 @@
 
           // Error tracking - GlitchTip (Sentry-compatible)
           $wgSentryDsn = "{{ pickipedia_sentry_dsn | default('') }}";
+
+          // Delivery-kid pinning service API key
+          $wgDeliveryKidApiKey = "{{ delivery_kid_api_key }}";
         dest: "{{ jenkins_home }}/secrets/pickipedia/LocalSettings.local.php"
         mode: '0600'
         owner: 1000
@@ -1064,6 +1067,9 @@
 
           # Sentry/GlitchTip error tracking
           $wgSentryDsn = "{{ glitchtip_dsn.stdout_lines[-1] }}";
+
+          # Delivery-kid pinning service API key
+          $wgDeliveryKidApiKey = "{{ delivery_kid_api_key }}";
 
     # IPFS/Pinning service removed - now handled by delivery-kid
 
