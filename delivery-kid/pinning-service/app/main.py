@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routes import health, albums, drafts
+from .routes import health, albums, drafts, content
 from .services import cleanup
 
 # Configure logging
@@ -82,6 +82,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(albums.router)
 app.include_router(drafts.router)
+app.include_router(content.router)
 
 
 @app.get("/")

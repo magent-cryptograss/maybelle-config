@@ -102,3 +102,34 @@ async def require_wallet_auth(
         raise HTTPException(status_code=401, detail={"error": result.error})
 
     return result.address
+
+
+async def require_auth(
+    request: Request,
+    settings: Settings = Depends(get_settings)
+) -> str:
+    """
+    FastAPI dependency that accepts either API key or wallet signature.
+
+    API key auth: X-API-Key header + optional X-Uploaded-By for identity.
+    Wallet auth: X-Signature + X-Timestamp headers (existing flow).
+
+    Returns an identity string (wallet address or X-Uploaded-By value).
+    """
+    api_key = request.headers.get("X-API-Key")
+
+    if api_key:
+        if not settings.api_key:
+            raise HTTPException(
+                status_code=500,
+                detail={"error": "API key auth not configured on server"}
+            )
+        if api_key != settings.api_key:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "Invalid API key"}
+            )
+        return request.headers.get("X-Uploaded-By", "api-user")
+
+    # Fall back to wallet auth
+    return await require_wallet_auth(request, settings)

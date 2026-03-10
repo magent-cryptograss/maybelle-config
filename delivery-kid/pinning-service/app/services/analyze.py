@@ -1,11 +1,11 @@
-"""Audio file analysis using FFprobe."""
+"""Media file analysis using FFprobe."""
 
 import asyncio
 import json
 import re
 import shutil
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 
@@ -20,6 +20,29 @@ class AudioAnalysis:
     sample_rate: int = 0
     bit_depth: Optional[int] = None
     channels: int = 0
+    size_bytes: int = 0
+    error: Optional[str] = None
+
+
+@dataclass
+class MediaAnalysis:
+    """Result of general media file analysis (audio, video, image, or other)."""
+    success: bool
+    original_filename: str
+    detected_title: str = ""
+    media_type: str = ""  # "audio", "video", "image", "other"
+    format: str = ""
+    duration_seconds: Optional[float] = None
+    # Audio properties
+    sample_rate: Optional[int] = None
+    bit_depth: Optional[int] = None
+    channels: Optional[int] = None
+    # Video properties
+    width: Optional[int] = None
+    height: Optional[int] = None
+    video_codec: Optional[str] = None
+    audio_codec: Optional[str] = None
+    # Common
     size_bytes: int = 0
     error: Optional[str] = None
 
@@ -202,6 +225,200 @@ async def analyze_directory(directory: Path) -> list[AudioAnalysis]:
     # Analyze all files concurrently
     results = await asyncio.gather(*[
         analyze_audio_file(f) for f in audio_files
+    ])
+
+    return list(results)
+
+
+# --- General media analysis (audio + video + images) ---
+
+VIDEO_EXTENSIONS = {'.mp4', '.webm', '.mov', '.mkv', '.avi', '.ts'}
+IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'}
+AUDIO_EXTENSIONS = {'.flac', '.wav', '.mp3', '.ogg', '.m4a', '.aac', '.opus'}
+
+VIDEO_FORMAT_MAP = {
+    'h264': 'H.264',
+    'h265': 'H.265',
+    'hevc': 'H.265',
+    'vp8': 'VP8',
+    'vp9': 'VP9',
+    'av1': 'AV1',
+    'theora': 'Theora',
+}
+
+
+def video_format_name(codec_name: str) -> str:
+    """Convert FFprobe video codec name to friendly format name."""
+    return VIDEO_FORMAT_MAP.get(codec_name.lower(), codec_name.upper())
+
+
+def detect_media_type(file_path: Path) -> str:
+    """Detect media type from file extension."""
+    ext = file_path.suffix.lower()
+    if ext in VIDEO_EXTENSIONS:
+        return "video"
+    elif ext in AUDIO_EXTENSIONS:
+        return "audio"
+    elif ext in IMAGE_EXTENSIONS:
+        return "image"
+    return "other"
+
+
+def container_format_name(file_path: Path) -> str:
+    """Get a friendly container format name from extension."""
+    ext_map = {
+        '.mp4': 'MP4', '.webm': 'WebM', '.mov': 'MOV', '.mkv': 'MKV',
+        '.avi': 'AVI', '.ts': 'MPEG-TS',
+        '.jpg': 'JPEG', '.jpeg': 'JPEG', '.png': 'PNG',
+        '.webp': 'WebP', '.gif': 'GIF', '.svg': 'SVG',
+    }
+    return ext_map.get(file_path.suffix.lower(), file_path.suffix.upper().lstrip('.'))
+
+
+async def analyze_media_file(file_path: Path) -> MediaAnalysis:
+    """
+    Analyze any media file using FFprobe.
+
+    Returns detailed metadata about audio, video, or image files.
+    """
+    if not file_path.exists():
+        return MediaAnalysis(
+            success=False,
+            original_filename=file_path.name,
+            error=f"File not found: {file_path}"
+        )
+
+    media_type = detect_media_type(file_path)
+
+    # Images don't need FFprobe
+    if media_type == "image":
+        return MediaAnalysis(
+            success=True,
+            original_filename=file_path.name,
+            detected_title=extract_title_from_filename(file_path.name),
+            media_type="image",
+            format=container_format_name(file_path),
+            size_bytes=file_path.stat().st_size,
+        )
+
+    if not shutil.which("ffprobe"):
+        return MediaAnalysis(
+            success=False,
+            original_filename=file_path.name,
+            error="ffprobe not found"
+        )
+
+    try:
+        process = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams",
+            str(file_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            error_msg = stderr.decode() if stderr else "FFprobe failed"
+            return MediaAnalysis(
+                success=False,
+                original_filename=file_path.name,
+                error=error_msg
+            )
+
+        data = json.loads(stdout.decode())
+        format_info = data.get("format", {})
+
+        # Find streams by type
+        video_stream = None
+        audio_stream = None
+        for stream in data.get("streams", []):
+            codec_type = stream.get("codec_type")
+            if codec_type == "video" and not video_stream:
+                video_stream = stream
+            elif codec_type == "audio" and not audio_stream:
+                audio_stream = stream
+
+        # Duration
+        duration = None
+        if "duration" in format_info:
+            duration = float(format_info["duration"])
+        elif video_stream and "duration" in video_stream:
+            duration = float(video_stream["duration"])
+        elif audio_stream and "duration" in audio_stream:
+            duration = float(audio_stream["duration"])
+
+        # File size
+        size_bytes = int(format_info.get("size", 0))
+        if size_bytes == 0:
+            size_bytes = file_path.stat().st_size
+
+        result = MediaAnalysis(
+            success=True,
+            original_filename=file_path.name,
+            detected_title=extract_title_from_filename(file_path.name),
+            media_type=media_type,
+            duration_seconds=duration,
+            size_bytes=size_bytes,
+        )
+
+        # Video properties
+        if video_stream:
+            result.width = int(video_stream.get("width", 0)) or None
+            result.height = int(video_stream.get("height", 0)) or None
+            result.video_codec = video_format_name(video_stream.get("codec_name", ""))
+            result.format = container_format_name(file_path)
+
+        # Audio properties
+        if audio_stream:
+            result.audio_codec = format_name_from_codec(audio_stream.get("codec_name", ""))
+            result.sample_rate = int(audio_stream.get("sample_rate", 0)) or None
+            result.channels = int(audio_stream.get("channels", 0)) or None
+            if "bits_per_raw_sample" in audio_stream:
+                result.bit_depth = int(audio_stream["bits_per_raw_sample"])
+            elif "bits_per_sample" in audio_stream:
+                result.bit_depth = int(audio_stream["bits_per_sample"])
+            # For audio-only files, use the codec as the format name
+            if not video_stream:
+                result.format = format_name_from_codec(audio_stream.get("codec_name", ""))
+
+        return result
+
+    except json.JSONDecodeError as e:
+        return MediaAnalysis(
+            success=False,
+            original_filename=file_path.name,
+            error=f"Failed to parse FFprobe output: {e}"
+        )
+    except Exception as e:
+        return MediaAnalysis(
+            success=False,
+            original_filename=file_path.name,
+            error=str(e)
+        )
+
+
+async def analyze_media_directory(directory: Path) -> list[MediaAnalysis]:
+    """
+    Analyze all media files in a directory.
+
+    Returns list of analysis results sorted by filename.
+    """
+    all_extensions = AUDIO_EXTENSIONS | VIDEO_EXTENSIONS | IMAGE_EXTENSIONS
+
+    media_files = [
+        f for f in directory.iterdir()
+        if f.is_file() and f.suffix.lower() in all_extensions
+    ]
+
+    media_files.sort(key=lambda f: f.name.lower())
+
+    results = await asyncio.gather(*[
+        analyze_media_file(f) for f in media_files
     ])
 
     return list(results)
