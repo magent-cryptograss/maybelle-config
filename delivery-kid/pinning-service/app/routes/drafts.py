@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
-from ..auth import require_wallet_auth
+from ..auth import require_auth
 from ..config import get_settings, Settings
 from ..models.draft import DraftFile, DraftState, DraftResponse, FinalizeRequest
 from ..services import analyze, ipfs, transcode
@@ -51,7 +51,7 @@ def is_draft_expired(state: DraftState) -> bool:
 @router.post("", response_model=DraftResponse)
 async def create_draft(
     files: list[UploadFile] = File(...),
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """
@@ -158,7 +158,7 @@ async def create_draft(
 @router.get("/{draft_id}", response_model=DraftResponse)
 async def get_draft(
     draft_id: str,
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """
@@ -193,7 +193,7 @@ async def get_draft(
 @router.delete("/{draft_id}")
 async def delete_draft(
     draft_id: str,
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """
@@ -509,7 +509,7 @@ async def finalize_sse_generator(
 async def finalize_draft(
     draft_id: str,
     request: FinalizeRequest,
-    wallet_address: str = Depends(require_wallet_auth),
+    wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
     """
