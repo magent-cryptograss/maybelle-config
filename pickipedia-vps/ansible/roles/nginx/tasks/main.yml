@@ -25,8 +25,8 @@
           access_log /var/log/nginx/mediawiki-access.log;
           error_log /var/log/nginx/mediawiki-error.log;
 
-          # Client body size (for file uploads)
-          client_max_body_size 100M;
+          # Client body size (for content pipeline uploads)
+          client_max_body_size 2G;
 
           # MediaWiki short URLs
           location / {

@@ -1,5 +1,7 @@
-"""Wallet signature authentication."""
+"""Wallet signature and HMAC token authentication."""
 
+import hashlib
+import hmac
 import time
 from dataclasses import dataclass
 from typing import Optional
@@ -9,6 +11,26 @@ from eth_account import Account
 from fastapi import Request, HTTPException, Depends
 
 from .config import get_settings, Settings
+
+
+def create_upload_token(api_key: str, username: str, timestamp: int) -> str:
+    """Create an HMAC upload token for wiki-authenticated users."""
+    message = f"upload:{username}:{timestamp}"
+    return hmac.new(api_key.encode(), message.encode(), hashlib.sha256).hexdigest()
+
+
+def verify_upload_token(token: str, username: str, timestamp: int, settings: Settings) -> bool:
+    """Verify an HMAC upload token."""
+    if not settings.api_key:
+        return False
+    expected = create_upload_token(settings.api_key, username, timestamp)
+    if not hmac.compare_digest(token, expected):
+        return False
+    # Check timestamp freshness
+    now_ms = int(time.time() * 1000)
+    drift_ms = abs(now_ms - timestamp)
+    max_drift_ms = settings.max_timestamp_drift_seconds * 1000
+    return drift_ms <= max_drift_ms
 
 
 @dataclass
@@ -109,15 +131,36 @@ async def require_auth(
     settings: Settings = Depends(get_settings)
 ) -> str:
     """
-    FastAPI dependency that accepts either API key or wallet signature.
+    FastAPI dependency that accepts HMAC upload token, API key, or wallet signature.
 
+    HMAC token auth: X-Upload-Token + X-Upload-User + X-Upload-Timestamp headers.
+      Wiki generates these for authenticated users to upload directly.
     API key auth: X-API-Key header + optional X-Uploaded-By for identity.
     Wallet auth: X-Signature + X-Timestamp headers (existing flow).
 
-    Returns an identity string (wallet address or X-Uploaded-By value).
+    Returns an identity string.
     """
-    api_key = request.headers.get("X-API-Key")
+    # 1. HMAC upload token (wiki-issued, for direct browser uploads)
+    upload_token = request.headers.get("X-Upload-Token")
+    if upload_token:
+        username = request.headers.get("X-Upload-User", "")
+        timestamp_str = request.headers.get("X-Upload-Timestamp", "")
+        try:
+            timestamp = int(timestamp_str)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "Invalid upload timestamp"}
+            )
+        if not verify_upload_token(upload_token, username, timestamp, settings):
+            raise HTTPException(
+                status_code=401,
+                detail={"error": "Invalid or expired upload token"}
+            )
+        return f"wiki:{username}"
 
+    # 2. API key (server-to-server)
+    api_key = request.headers.get("X-API-Key")
     if api_key:
         if not settings.api_key:
             raise HTTPException(
@@ -131,5 +174,5 @@ async def require_auth(
             )
         return request.headers.get("X-Uploaded-By", "api-user")
 
-    # Fall back to wallet auth
+    # 3. Wallet signature
     return await require_wallet_auth(request, settings)

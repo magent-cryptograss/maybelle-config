@@ -62,16 +62,25 @@ is_valid_user() {
 
 TARGET_USER="$USER"
 
-# Parse SSH_ORIGINAL_COMMAND: [username] [session_name]
+# Parse SSH_ORIGINAL_COMMAND
+# Usage:
+#   ssh sshrouter@hunter             → plain shell in your container
+#   ssh sshrouter@hunter tmux        → attach to tmux session "magenta" in your container
+#   ssh sshrouter@hunter justin      → join justin's container (tmux session "magenta")
+#   ssh sshrouter@hunter justin jam  → join justin's container (tmux session "jam")
+#   ssh sshrouter@hunter "ls -la"    → run command in your container
 TARGET_SESSION="magenta"
+JOIN_TMUX=false
 if [ -n "$SSH_ORIGINAL_COMMAND" ]; then
     read -r FIRST_ARG REST_ARGS <<< "$SSH_ORIGINAL_COMMAND"
-    if is_valid_user "$FIRST_ARG"; then
+    if [ "$FIRST_ARG" = "tmux" ]; then
+        JOIN_TMUX=true
+        [ -n "$REST_ARGS" ] && TARGET_SESSION="$REST_ARGS"
+    elif is_valid_user "$FIRST_ARG"; then
+        JOIN_TMUX=true
         TARGET_USER="$FIRST_ARG"
         [ -n "$REST_ARGS" ] && TARGET_SESSION="$REST_ARGS"
-        if [ "$TARGET_USER" = "$USER" ]; then
-            echo "That's your own container - connecting normally."
-        else
+        if [ "$TARGET_USER" != "$USER" ]; then
             echo "Joining ${TARGET_USER}'s container (session: ${TARGET_SESSION})..."
         fi
     fi
@@ -85,10 +94,10 @@ if ! docker ps --format '{% raw %}{{.Names}}{% endraw %}' | grep -q "^${CONTAINE
     exit 1
 fi
 
-# If SSH_ORIGINAL_COMMAND is set (and wasn't a username), execute it
-if [ -n "$SSH_ORIGINAL_COMMAND" ] && [ "$TARGET_USER" = "$USER" ]; then
-    docker exec -it "$CONTAINER" su - magent -c "$SSH_ORIGINAL_COMMAND"
-# Otherwise, attach to tmux session (default: magenta)
-else
+if [ "$JOIN_TMUX" = true ]; then
     docker exec -it "$CONTAINER" su - magent -c "tmux new-session -A -s $TARGET_SESSION"
+elif [ -n "$SSH_ORIGINAL_COMMAND" ]; then
+    docker exec -it "$CONTAINER" su - magent -c "$SSH_ORIGINAL_COMMAND"
+else
+    docker exec -it "$CONTAINER" su - magent
 fi

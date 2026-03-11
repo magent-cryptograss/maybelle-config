@@ -41,13 +41,13 @@
 
       ; Memory and execution
       memory_limit = 256M
-      max_execution_time = 60
-      max_input_time = 60
+      max_execution_time = 600
+      max_input_time = 600
       max_input_vars = 5000
 
-      ; Upload settings (for media files)
-      upload_max_filesize = 100M
-      post_max_size = 105M
+      ; Upload settings (for media files and content pipeline)
+      upload_max_filesize = 2G
+      post_max_size = 2100M
       file_uploads = On
 
       ; Sessions
