@@ -13,7 +13,7 @@ from sse_starlette.sse import EventSourceResponse
 from ..auth import require_auth
 from ..config import get_settings, Settings
 from ..models.draft import DraftFile, DraftState, DraftResponse, FinalizeRequest
-from ..services import analyze, ipfs, transcode
+from ..services import analyze, ipfs, torrent, transcode
 
 router = APIRouter(prefix="/draft-album", tags=["drafts"])
 
@@ -475,16 +475,67 @@ async def finalize_sse_generator(
         yield await send_event("progress", {
             "stage": "ipfs",
             "message": "Verifying pin...",
-            "progress": 90
+            "progress": 80
         })
 
         # Build gateway URL
         gateway_url = f"{settings.ipfs_gateway_url}/ipfs/{result.cid}"
 
+        # Generate deterministic .torrent file
+        yield await send_event("progress", {
+            "stage": "torrent",
+            "message": "Generating BitTorrent file...",
+            "progress": 85
+        })
+
+        torrent_result = torrent.create_torrent(
+            directory=album_dir,
+            name=result.cid,
+            output_path=draft_dir / f"{result.cid}.torrent",
+            webseeds=[f"https://ipfs.io/ipfs/{result.cid}/"],
+            comment=f"{request.artist} - {request.album_title}",
+        )
+
+        bittorrent_infohash = None
+        bittorrent_trackers = None
+        torrent_cid = None
+
+        if torrent_result.success:
+            bittorrent_infohash = torrent_result.infohash
+            bittorrent_trackers = torrent.DEFAULT_TRACKERS
+
+            yield await send_event("progress", {
+                "stage": "torrent",
+                "message": f"Torrent created: infohash {torrent_result.infohash[:12]}...",
+                "progress": 88
+            })
+
+            # Pin the .torrent file itself to IPFS
+            if torrent_result.torrent_path:
+                torrent_pin = await ipfs.add_file(torrent_result.torrent_path)
+                if torrent_pin.success:
+                    torrent_cid = torrent_pin.cid
+                    yield await send_event("progress", {
+                        "stage": "torrent",
+                        "message": f"Torrent file pinned: {torrent_pin.cid}",
+                        "progress": 92
+                    })
+                else:
+                    yield await send_event("warning", {
+                        "message": f"Could not pin .torrent file: {torrent_pin.error}"
+                    })
+        else:
+            yield await send_event("warning", {
+                "message": f"Torrent generation failed: {torrent_result.error}"
+            })
+
         yield await send_event("complete", {
             "cid": result.cid,
             "gateway_url": gateway_url,
             "pinata": result.pinata_success,
+            "bittorrent_infohash": bittorrent_infohash,
+            "bittorrent_trackers": bittorrent_trackers,
+            "torrent_cid": torrent_cid,
             "album_title": request.album_title,
             "artist": request.artist,
             "tracks": [
