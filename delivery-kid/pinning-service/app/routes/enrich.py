@@ -29,6 +29,7 @@ router = APIRouter(prefix="/enrich", tags=["enrich"])
 
 class TorrentRequest(BaseModel):
     cid: str
+    name: str | None = None
 
 
 class TorrentResponse(BaseModel):
@@ -104,9 +105,10 @@ async def generate_torrent(
         )
 
     try:
+        torrent_name = req.name or cid
         result = create_torrent(
             directory=album_dir,
-            name=cid,
+            name=torrent_name,
             webseeds=[
                 f"{settings.ipfs_gateway_url}/ipfs/{cid}/",
                 f"https://ipfs.io/ipfs/{cid}/",
