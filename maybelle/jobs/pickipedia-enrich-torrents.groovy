@@ -36,6 +36,6 @@ pipelineJob('pickipedia-enrich-torrents') {
     }
 
     triggers {
-        cron('H */6 * * *')  // Run roughly every 6 hours
+        cron('*/2 * * * *')  // Run every 2 minutes
     }
 }
