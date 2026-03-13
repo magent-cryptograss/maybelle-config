@@ -367,29 +367,6 @@
         state: started
         enabled: yes
 
-    # Release reconciliation cron — generates BitTorrent metadata for releases
-    - name: Write reconciliation env file
-      copy:
-        dest: /opt/pinning-service/reconcile.env
-        mode: '0600'
-        content: |
-          WIKI_API_URL=https://pickipedia.xyz/api.php
-          WIKI_BOT_USER={{ wiki_bot_user }}
-          WIKI_BOT_PASSWORD={{ wiki_bot_password }}
-          IPFS_API_URL=http://ipfs:5001
-          IPFS_GATEWAY_URL=https://ipfs.io
-      when: wiki_bot_user | default('') | length > 0
-
-    - name: Set up release reconciliation cron
-      cron:
-        name: "reconcile-releases"
-        minute: "*/5"
-        job: >
-          docker exec --env-file /opt/pinning-service/reconcile.env pinning-service
-          python /app/reconcile_releases.py
-          >> /var/log/reconcile-releases.log 2>&1
-      when: wiki_bot_user | default('') | length > 0
-
   handlers:
     - name: Restart Caddy
       systemd:
