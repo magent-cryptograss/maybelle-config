@@ -119,15 +119,17 @@ async def generate_torrent(
 
     try:
         torrent_name = req.name or cid
-        # Webseed URLs use /webseed/{cid}/ path — Caddy rewrites
-        # /webseed/{cid}/{torrent_name}/{file} → /ipfs/{cid}/{file}
-        # to bridge the BEP 19 path convention with IPFS gateway paths.
         base_url = settings.ipfs_gateway_url.replace("ipfs.", "", 1)
         result = create_torrent(
             directory=album_dir,
             name=torrent_name,
+            # Multi-file: Caddy rewrites /webseed/{cid}/{name}/{file} → /ipfs/{cid}/{file}
             webseeds=[
                 f"{base_url}/webseed/{cid}/",
+            ],
+            # Single-file: BEP 19 fetches URL directly
+            single_file_webseeds=[
+                f"{settings.ipfs_gateway_url}/ipfs/{cid}",
             ],
         )
 
