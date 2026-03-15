@@ -26,5 +26,6 @@ RUN useradd -m -u 1000 appuser
 USER appuser
 
 EXPOSE 3001
+EXPOSE 6881
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "3001"]

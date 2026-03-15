@@ -9,8 +9,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
-from .routes import health, albums, drafts, content, enrich
+from .routes import health, albums, drafts, content, enrich, torrent
 from .services import cleanup
+from .services.seeder import init_seeder, stop_seeder
 
 # Configure logging
 logging.basicConfig(
@@ -47,10 +48,16 @@ async def lifespan(app: FastAPI):
         cleanup.periodic_cleanup(staging_dir, interval_seconds=3600)
     )
 
+    # Start BitTorrent seeder
+    init_seeder(settings.seeding_dir)
+
     logger.info("Delivery Kid pinning service started")
     yield
 
-    # Shutdown: cancel cleanup task
+    # Shutdown: stop seeder first
+    stop_seeder()
+
+    # Cancel cleanup task
     cleanup_task.cancel()
     try:
         await cleanup_task
@@ -84,6 +91,7 @@ app.include_router(albums.router)
 app.include_router(drafts.router)
 app.include_router(content.router)
 app.include_router(enrich.router)
+app.include_router(torrent.router)
 
 
 @app.get("/")

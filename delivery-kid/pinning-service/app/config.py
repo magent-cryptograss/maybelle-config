@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # Staging directory for uploads and transcoding
     staging_dir: str = "/staging"
 
+    # Seeding directory for BitTorrent (persistent, on storage box)
+    seeding_dir: str = "/staging/seeding"
+
     # Authorized wallets (comma-separated)
     authorized_wallets: str = ""
 

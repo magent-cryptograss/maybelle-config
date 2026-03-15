@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from ..auth import require_auth
 from ..config import get_settings, Settings
 from ..services.torrent import create_torrent, DEFAULT_TRACKERS
+from ..services.seeder import get_seeder
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class TorrentResponse(BaseModel):
     infohash: str | None = None
     trackers: list[str] | None = None
     webseeds: list[str] | None = None
+    torrent_url: str | None = None
     file_count: int | None = None
     total_size: int | None = None
     piece_length: int | None = None
@@ -141,12 +143,25 @@ async def generate_torrent(
                 error=f"Torrent generation failed: {result.error}",
             )
 
+        # Add to BitTorrent seeder (copies content to seeding dir)
+        torrent_url = None
+        seeder = get_seeder()
+        if seeder and result.torrent_bytes:
+            infohash_added = seeder.add_torrent(cid, result.torrent_bytes, album_dir)
+            if infohash_added:
+                base_url = settings.ipfs_gateway_url.replace("ipfs.", "", 1)
+                torrent_url = f"{base_url}/torrent/{result.infohash}.torrent"
+                logger.info("Seeding torrent for %s (infohash %s)", cid, infohash_added)
+            else:
+                logger.warning("Failed to add torrent to seeder for %s", cid)
+
         return TorrentResponse(
             success=True,
             cid=cid,
             infohash=result.infohash,
             trackers=DEFAULT_TRACKERS,
             webseeds=result.webseeds,
+            torrent_url=torrent_url,
             file_count=result.file_count,
             total_size=result.total_size,
             piece_length=result.piece_length,
