@@ -329,6 +329,14 @@
         dest: /etc/caddy/Caddyfile
         content: |
           {{ domain_name }} {
+              route /webseed/* {
+                  # BEP 19 webseed rewrite: BT clients request
+                  # /webseed/{cid}/{torrent_name}/{file_path}
+                  # Strip the torrent name and proxy to IPFS gateway as
+                  # /ipfs/{cid}/{file_path}
+                  uri path_regexp ^/webseed/([^/]+)/[^/]+/(.+)$ /ipfs/{re.1}/{re.2}
+                  reverse_proxy localhost:8080
+              }
               route {
                   reverse_proxy /health localhost:3001
                   reverse_proxy /version localhost:3001
