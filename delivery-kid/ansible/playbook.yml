@@ -334,7 +334,7 @@
                   # /webseed/{cid}/{torrent_name}/{file_path}
                   # Strip the torrent name and proxy to IPFS gateway as
                   # /ipfs/{cid}/{file_path}
-                  uri path_regexp ^/webseed/([^/]+)/[^/]+/(.+)$ /ipfs/{re.1}/{re.2}
+                  uri path_regexp ^/webseed/([^/]+)/[^/]+/(.+)$ /ipfs/$1/$2
                   reverse_proxy localhost:8080
               }
               route {
