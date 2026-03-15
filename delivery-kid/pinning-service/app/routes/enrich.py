@@ -37,6 +37,7 @@ class TorrentResponse(BaseModel):
     cid: str
     infohash: str | None = None
     trackers: list[str] | None = None
+    webseeds: list[str] | None = None
     file_count: int | None = None
     total_size: int | None = None
     piece_length: int | None = None
@@ -145,6 +146,7 @@ async def generate_torrent(
             cid=cid,
             infohash=result.infohash,
             trackers=DEFAULT_TRACKERS,
+            webseeds=result.webseeds,
             file_count=result.file_count,
             total_size=result.total_size,
             piece_length=result.piece_length,

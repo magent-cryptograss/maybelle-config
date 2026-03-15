@@ -82,6 +82,7 @@ class TorrentResult:
     piece_length: Optional[int] = None
     total_size: Optional[int] = None
     file_count: Optional[int] = None
+    webseeds: Optional[list[str]] = None
     error: Optional[str] = None
 
 
@@ -227,4 +228,5 @@ def create_torrent(
         piece_length=piece_length,
         total_size=total_size,
         file_count=len(files),
+        webseeds=ws_urls or [],
     )
