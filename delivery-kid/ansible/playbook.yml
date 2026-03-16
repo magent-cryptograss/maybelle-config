@@ -128,6 +128,7 @@
                 - IPFS_API_URL=http://ipfs:5001
                 - IPFS_GATEWAY_URL=https://{{ ipfs_gateway_domain }}
                 - STAGING_DIR=/staging
+                - COCONUT_API_KEY={{ coconut_api_key | default('') }}
               volumes:
                 - /mnt/storage-box/staging:/staging
               ports:

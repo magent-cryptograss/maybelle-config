@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     # Authorized wallets (comma-separated)
     authorized_wallets: str = ""
 
+    # Coconut.co cloud transcoding
+    coconut_api_key: str = ""
+
     # Auth settings
     max_timestamp_drift_seconds: int = 3600  # 1 hour — token generated at page load, user may browse before uploading
     api_key: str = ""  # Shared API key for server-to-server auth (e.g., from PickiPedia)
