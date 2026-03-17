@@ -31,6 +31,7 @@ class DraftResponse(BaseModel):
     draft_id: str
     expires_at: datetime
     files: list[DraftFile]
+    commit: str = Field(default="unknown", description="Git commit hash of the build that created this draft")
 
 
 class FinalizeTrack(BaseModel):

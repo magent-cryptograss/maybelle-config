@@ -1,5 +1,6 @@
 """Configuration settings loaded from environment variables."""
 
+import os
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -62,3 +63,8 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+def get_commit() -> str:
+    """Return the git commit hash baked into this build."""
+    return os.environ.get("GIT_COMMIT", "unknown")
