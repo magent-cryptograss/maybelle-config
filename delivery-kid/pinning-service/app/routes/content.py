@@ -11,11 +11,12 @@ from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from sse_starlette.sse import EventSourceResponse
 
 from ..auth import require_auth
-from ..config import get_settings, Settings
+from ..config import get_settings, get_commit, Settings
 from ..models.content import (
     ContentFile, ContentDraftState, ContentDraftResponse, ContentFinalizeRequest
 )
 from ..services import analyze, ipfs, transcode
+from ..services.coconut import submit_to_coconut, save_job
 
 router = APIRouter(prefix="/draft-content", tags=["content"])
 
@@ -150,6 +151,7 @@ async def create_content_draft(
             draft_id=draft_id,
             expires_at=expires_at,
             files=draft_files,
+            commit=get_commit(),
         )
 
     except HTTPException:
@@ -186,6 +188,7 @@ async def get_content_draft(
         expires_at=state.expires_at,
         files=state.files,
         metadata=state.metadata,
+        commit=get_commit(),
     )
 
 
@@ -210,6 +213,30 @@ async def delete_content_draft(
     return {"message": "Draft deleted", "draft_id": draft_id}
 
 
+def _should_use_coconut(request: ContentFinalizeRequest, settings: Settings) -> bool:
+    """Determine if we should try Coconut cloud transcoding."""
+    strategy = request.transcoding_strategy
+    if strategy == "none":
+        return False
+    if strategy == "local":
+        return False
+    if strategy == "coconut":
+        return bool(settings.coconut_api_key)
+    # "auto" — use Coconut if available, otherwise local
+    return bool(settings.coconut_api_key)
+
+
+def _should_transcode_video(request: ContentFinalizeRequest) -> bool:
+    """Determine if video transcoding is requested."""
+    if request.transcoding_strategy == "none":
+        return False
+    # Legacy field support
+    if request.transcode_hls:
+        return True
+    # Auto/coconut/local all imply transcoding for video
+    return request.transcoding_strategy in ("auto", "coconut", "local")
+
+
 async def finalize_sse_generator(
     draft_id: str,
     request: ContentFinalizeRequest,
@@ -217,7 +244,17 @@ async def finalize_sse_generator(
     state: ContentDraftState,
     settings: Settings
 ):
-    """SSE generator for content finalization — transcode if needed, then pin."""
+    """SSE generator for content finalization — transcode if needed, then pin.
+
+    For video with transcoding enabled:
+    - Tries Coconut.co cloud transcoding first (AV1+Opus HLS, async via webhook)
+    - Falls back to local ffmpeg if Coconut is unavailable
+    - Coconut path: pins source to IPFS, submits job, returns job_id for polling
+    - Local path: synchronous transcode via SSE progress events
+    """
+    import logging
+    import time
+    logger = logging.getLogger(__name__)
 
     async def send_event(event: str, data: dict):
         return {"event": event, "data": json.dumps(data)}
@@ -233,15 +270,98 @@ async def finalize_sse_generator(
             "progress": 5
         })
 
-        # Determine what we're working with
         video_files = [f for f in state.files if f.media_type == "video"]
-        audio_files = [f for f in state.files if f.media_type == "audio"]
-        image_files = [f for f in state.files if f.media_type == "image"]
+        wants_transcode = len(state.files) == 1 and video_files and _should_transcode_video(request)
 
-        # For single-file uploads: pin the file directly (or transcode first)
-        # For multi-file uploads: pin as a directory
-        if len(state.files) == 1 and video_files and request.transcode_hls:
-            # Single video → HLS transcode → pin directory
+        if wants_transcode and _should_use_coconut(request, settings):
+            # === Coconut cloud transcoding path (async) ===
+            video_file = video_files[0]
+            src_path = upload_dir / video_file.original_filename
+
+            yield await send_event("progress", {
+                "stage": "ipfs",
+                "message": "Pinning source video to IPFS...",
+                "progress": 10
+            })
+
+            # Pin source to IPFS so Coconut can fetch it via gateway
+            pin_result = await ipfs.add_file(src_path)
+            if not pin_result.success:
+                yield await send_event("error", {
+                    "message": f"Failed to pin source video: {pin_result.error}"
+                })
+                return
+
+            source_cid = pin_result.cid
+            source_url = f"{settings.ipfs_gateway_url}/ipfs/{source_cid}"
+            logger.info("[content:%s] Source pinned: %s", draft_id[:8], source_cid)
+
+            yield await send_event("progress", {
+                "stage": "transcode",
+                "message": "Submitting to Coconut for AV1 transcoding...",
+                "progress": 30
+            })
+
+            # Build webhook URL
+            base_url = settings.ipfs_gateway_url.replace("ipfs.", "", 1)
+            job_id = f"coconut-{int(time.time())}-{id(src_path) % 100000:05d}"
+            webhook_url = f"{base_url}/webhook/coconut?job_id={job_id}"
+
+            try:
+                coconut_result = await submit_to_coconut(
+                    source_url=source_url,
+                    api_key=settings.coconut_api_key,
+                    webhook_url=webhook_url,
+                    qualities=[720, 480],
+                )
+                coconut_job_id = coconut_result.get("id")
+                logger.info("[content:%s] Coconut job created: %s", draft_id[:8], coconut_job_id)
+
+                # Save job state for webhook handler
+                job_state = {
+                    "id": job_id,
+                    "coconutJobId": coconut_job_id,
+                    "status": "processing",
+                    "sourceCid": source_cid,
+                    "keepOriginal": False,
+                    "title": request.title,
+                    "fileType": request.file_type,
+                    "subsequentTo": request.subsequent_to,
+                    "createdAt": datetime.now(timezone.utc).isoformat(),
+                    "identity": state.uploaded_by,
+                }
+                save_job(Path(settings.staging_dir), job_id, job_state)
+
+                # Clean up draft dir — source is on IPFS now
+                shutil.rmtree(draft_dir, ignore_errors=True)
+
+                yield await send_event("transcoding-submitted", {
+                    "sourceCid": source_cid,
+                    "jobId": job_id,
+                    "coconutJobId": coconut_job_id,
+                    "message": "Video submitted for AV1 cloud transcoding. HLS output will be pinned automatically when complete.",
+                    "pollUrl": f"/job/{job_id}",
+                    "gatewayUrl": f"{settings.ipfs_gateway_url}/ipfs/{source_cid}",
+                    "title": request.title,
+                    "fileType": request.file_type,
+                    "subsequentTo": request.subsequent_to,
+                })
+                return
+
+            except Exception as e:
+                logger.warning(
+                    "[content:%s] Coconut submission failed, falling back to local: %s",
+                    draft_id[:8], e
+                )
+                yield await send_event("progress", {
+                    "stage": "transcode",
+                    "message": "Cloud transcoding unavailable, using local ffmpeg...",
+                    "progress": 15
+                })
+                # Fall through to local transcoding below
+
+        if wants_transcode:
+            # === Local ffmpeg transcoding path (sync) ===
             video_file = video_files[0]
             src_path = upload_dir / video_file.original_filename
 
@@ -293,7 +413,6 @@ async def finalize_sse_generator(
             "created_at": datetime.now(timezone.utc).isoformat(),
             **request.metadata,
         }
-        # Remove None values
         metadata = {k: v for k, v in metadata.items() if v is not None}
 
         with open(pin_path / "metadata.json", "w") as f:
@@ -305,7 +424,6 @@ async def finalize_sse_generator(
             "progress": 70
         })
 
-        # Pin to IPFS
         result = await ipfs.add_directory(pin_path)
 
         if not result.success:
