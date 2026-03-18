@@ -139,12 +139,6 @@ def _verify_hmac_headers(request: Request, settings: Settings, action: str = "up
         )
 
     if not verify_upload_token(upload_token, username, timestamp, settings, action=action):
-        # If finalize action failed, also try upload action for backwards compat
-        if action == "finalize" and verify_upload_token(upload_token, username, timestamp, settings, action="upload"):
-            # Upload token used for finalize — this is the old behavior, allow it
-            # but log a deprecation warning
-            logger.warning("HMAC: upload token used for finalize action (deprecated), user=%s", username)
-            return f"wiki:{username}"
         raise HTTPException(
             status_code=401,
             detail={"error": "Invalid or expired upload token"}
