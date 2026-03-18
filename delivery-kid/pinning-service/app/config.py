@@ -47,7 +47,7 @@ class Settings(BaseSettings):
         "https://www.cryptograss.live",
         "https://pickipedia.xyz",
     ]
-    cors_origin_regex: str = r"https://\w+\d*\.hunter\.cryptograss\.live"
+    cors_origin_regex: str = r"https://[\w.-]+\.hunter\.cryptograss\.live"
 
     class Config:
         env_file = ".env"
