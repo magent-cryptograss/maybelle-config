@@ -18,17 +18,22 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 
-from ..auth import verify_upload_token
+from ..auth import require_auth, verify_upload_token
 from ..config import get_settings, Settings
 
 router = APIRouter(prefix="/staging", tags=["staging"])
 
-# Ensure common media types are registered
-mimetypes.add_type("video/mp4", ".mp4")
-mimetypes.add_type("video/webm", ".webm")
-mimetypes.add_type("video/quicktime", ".mov")
-mimetypes.add_type("audio/flac", ".flac")
-mimetypes.add_type("audio/ogg", ".ogg")
+# Ensure common media types are registered (Python's default registry
+# misses some of these on minimal Linux installs)
+_MEDIA_TYPES = {
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".mov": "video/quicktime",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+}
+for _ext, _mime in _MEDIA_TYPES.items():
+    mimetypes.add_type(_mime, _ext)
 
 
 async def require_staging_auth(
@@ -43,8 +48,8 @@ async def require_staging_auth(
     Query param auth uses the same HMAC verification as header auth,
     just sourced from ?token=&user=&timestamp= instead of X-Upload-* headers.
     """
-    # Try header auth first (X-Upload-Token, X-API-Key, or X-Signature)
-    from ..auth import require_auth
+    # Try header auth first (X-Upload-Token, X-API-Key, or X-Signature).
+    # If it fails, fall through to query param auth below.
     try:
         return await require_auth(request, settings)
     except HTTPException:
