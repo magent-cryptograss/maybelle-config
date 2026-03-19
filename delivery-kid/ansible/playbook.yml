@@ -356,6 +356,7 @@
                   reverse_proxy /unpin/* localhost:3001
                   reverse_proxy /enrich* localhost:3001
                   reverse_proxy /torrent* localhost:3001
+                  reverse_proxy /staging/* localhost:3001
                   respond "delivery-kid pinning service" 200
               }
           }
