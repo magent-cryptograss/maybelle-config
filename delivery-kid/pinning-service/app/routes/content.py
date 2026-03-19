@@ -124,6 +124,7 @@ async def create_content_draft(
                     video_codec=a.video_codec,
                     audio_codec=a.audio_codec,
                     size_bytes=a.size_bytes,
+                    creation_time=a.creation_time,
                 ))
 
         if not draft_files:

@@ -44,6 +44,7 @@ class MediaAnalysis:
     audio_codec: Optional[str] = None
     # Common
     size_bytes: int = 0
+    creation_time: Optional[str] = None  # ISO 8601 from container metadata
     error: Optional[str] = None
 
 
@@ -365,6 +366,12 @@ async def analyze_media_file(file_path: Path) -> MediaAnalysis:
             duration_seconds=duration,
             size_bytes=size_bytes,
         )
+
+        # Creation time from container metadata (common in phone/camera video)
+        tags = format_info.get("tags", {})
+        creation_time = tags.get("creation_time") or tags.get("Creation_time")
+        if creation_time:
+            result.creation_time = creation_time
 
         # Video properties
         if video_stream:

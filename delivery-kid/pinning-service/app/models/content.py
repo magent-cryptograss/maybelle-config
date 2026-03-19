@@ -23,6 +23,7 @@ class ContentFile(BaseModel):
     audio_codec: Optional[str] = None
     # Common
     size_bytes: int
+    creation_time: Optional[str] = Field(default=None, description="ISO 8601 creation time from container metadata")
 
 
 class ContentDraftState(BaseModel):
