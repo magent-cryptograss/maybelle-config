@@ -59,6 +59,8 @@ async def submit_to_coconut(
     api_key: str,
     webhook_url: str,
     qualities: list[int] | None = None,
+    trim_start: float | None = None,
+    trim_end: float | None = None,
 ) -> dict:
     """Submit a video to Coconut for AV1 HLS transcoding.
 
@@ -82,7 +84,7 @@ async def submit_to_coconut(
     outputs = {}
     for q in qualities:
         key = f"hls_av1_{q}p"
-        outputs[key] = {
+        output = {
             "path": f"/output/{q}p/playlist.m3u8",
             "video": {
                 "codec": "av1",
@@ -97,6 +99,14 @@ async def submit_to_coconut(
                 "segment_duration": 6,
             },
         }
+        # Coconut trim: offset (start seconds) + duration (length seconds)
+        if trim_start is not None:
+            output["offset"] = trim_start
+        if trim_start is not None and trim_end is not None:
+            output["duration"] = trim_end - trim_start
+        elif trim_end is not None:
+            output["duration"] = trim_end
+        outputs[key] = output
 
     # Master playlist
     outputs["hls_master"] = {

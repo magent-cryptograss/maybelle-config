@@ -136,7 +136,9 @@ async def transcode_album_directory(
 async def transcode_video_to_hls(
     input_path: Path,
     output_dir: Path,
-    progress_callback: Optional[Callable[[str], Awaitable[None]]] = None
+    progress_callback: Optional[Callable[[str], Awaitable[None]]] = None,
+    trim_start: Optional[float] = None,
+    trim_end: Optional[float] = None,
 ) -> TranscodeResult:
     """
     Transcode a video file to HLS (HTTP Live Streaming) format.
@@ -172,7 +174,20 @@ async def transcode_video_to_hls(
 
         cmd = [
             "ffmpeg", "-y",
+        ]
+        # Trim: -ss before -i for fast seek, -to after -i for end time
+        if trim_start is not None:
+            cmd.extend(["-ss", str(trim_start)])
+        cmd.extend([
             "-i", str(input_path),
+        ])
+        if trim_end is not None:
+            # -to is relative to -ss when -ss is before -i
+            if trim_start is not None:
+                cmd.extend(["-to", str(trim_end - trim_start)])
+            else:
+                cmd.extend(["-to", str(trim_end)])
+        cmd.extend([
             # Video: H.264 for broad compatibility
             "-c:v", "libx264",
             "-preset", "medium",
@@ -186,7 +201,7 @@ async def transcode_video_to_hls(
             "-hls_list_size", "0",  # Keep all segments in playlist
             "-hls_segment_filename", str(output_dir / "segment_%03d.ts"),
             str(master_playlist),
-        ]
+        ])
 
         process = await asyncio.create_subprocess_exec(
             *cmd,

@@ -64,3 +64,9 @@ class ContentFinalizeRequest(BaseModel):
         description="Output video heights for HLS transcoding, e.g. [1080, 720, 480]. "
                     "Default [720, 480]. Common values: 2160 (4K), 1080, 720, 480, 360."
     )
+    trim_start_seconds: Optional[float] = Field(
+        default=None, description="Start time in seconds for trimming the video"
+    )
+    trim_end_seconds: Optional[float] = Field(
+        default=None, description="End time in seconds for trimming the video"
+    )

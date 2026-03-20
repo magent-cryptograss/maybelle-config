@@ -297,9 +297,14 @@ async def finalize_sse_generator(
             source_url = f"{settings.ipfs_gateway_url}/ipfs/{source_cid}"
             logger.info("[content:%s] Source pinned: %s", draft_id[:8], source_cid)
 
+            trim_msg = ""
+            if request.trim_start_seconds is not None or request.trim_end_seconds is not None:
+                s = request.trim_start_seconds or 0
+                e = request.trim_end_seconds
+                trim_msg = f" (trimming {s:.1f}s–{e:.1f}s)" if e else f" (trimming from {s:.1f}s)"
             yield await send_event("progress", {
                 "stage": "transcode",
-                "message": "Submitting to Coconut for AV1 transcoding...",
+                "message": f"Submitting to Coconut for AV1 transcoding{trim_msg}...",
                 "progress": 30
             })
 
@@ -314,6 +319,8 @@ async def finalize_sse_generator(
                     api_key=settings.coconut_api_key,
                     webhook_url=webhook_url,
                     qualities=request.transcoding_qualities,
+                    trim_start=request.trim_start_seconds,
+                    trim_end=request.trim_end_seconds,
                 )
                 coconut_job_id = coconut_result.get("id")
                 logger.info("[content:%s] Coconut job created: %s", draft_id[:8], coconut_job_id)
@@ -373,7 +380,11 @@ async def finalize_sse_generator(
             })
 
             hls_dir = output_dir / "hls"
-            result = await transcode.transcode_video_to_hls(src_path, hls_dir)
+            result = await transcode.transcode_video_to_hls(
+                src_path, hls_dir,
+                trim_start=request.trim_start_seconds,
+                trim_end=request.trim_end_seconds,
+            )
 
             if not result.success:
                 yield await send_event("error", {
