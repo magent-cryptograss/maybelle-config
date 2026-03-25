@@ -86,11 +86,18 @@
         mode: '0755'
 
     # Copy pinning service (delivery-kid's own Python FastAPI service)
+    # Uses synchronize (rsync) instead of copy to avoid checksumming
+    # thousands of files in venv/ on every deploy.
     - name: Copy pinning service files
-      copy:
+      synchronize:
         src: "{{ playbook_dir }}/../pinning-service/"
         dest: /opt/pinning-service/
-        mode: '0644'
+        rsync_opts:
+          - "--exclude=venv"
+          - "--exclude=__pycache__"
+          - "--exclude=tests"
+          - "--exclude=.pytest_cache"
+        delete: yes
 
     - name: Create Docker network for services
       docker_network:
