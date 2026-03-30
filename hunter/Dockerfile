@@ -66,6 +66,20 @@ RUN (type -p wget >dev/null || (apt update && apt install wget -y)) \
     && apt update \
     && apt install gh -y
 
+# Install Godot 4 (headless-compatible binary for game development)
+RUN GODOT_VERSION=$(curl -s https://api.github.com/repos/godotengine/godot/releases/latest | grep -oP '"tag_name": "\K[^"]+' | sed 's/-stable//') \
+    && echo "Installing Godot ${GODOT_VERSION}" \
+    && cd /tmp \
+    && wget -q "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" \
+    && unzip -q Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip \
+    && mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot \
+    && chmod +x /usr/local/bin/godot \
+    && rm -f Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip \
+    && (godot --headless --version || echo "Godot installed (version check skipped)")
+
+# Clone godogen (Claude Code skills for Godot game generation)
+RUN git clone --depth 1 https://github.com/htdt/godogen.git /opt/godogen
+
 USER magent
 WORKDIR /home/magent
 
@@ -104,6 +118,12 @@ ENV PATH="/root/.local/bin:$PATH"
 
 # Install Python dependencies for memory-lane using uv
 RUN /root/.local/bin/uv pip install --python /usr/bin/python3 --break-system-packages -r /home/magent/workspace/memory-lane/requirements.txt
+
+# Install godogen Python dependencies (rembg, etc. for Godot asset pipeline)
+# Skip GPU-specific packages (onnxruntime-gpu, nvidia-cudnn) since hunter has no NVIDIA GPU
+# Install CPU onnxruntime instead
+RUN /root/.local/bin/uv pip install --python /usr/bin/python3 --break-system-packages \
+    google-genai xai-sdk requests numpy pillow rembg pymatting onnxruntime
 
 # Copy startup script
 COPY container_startup.py /usr/local/bin/

@@ -521,6 +521,37 @@ def start_pickipedia_preview():
     logger.info(f"✓ PickiPedia preview ready at: https://pickipedia.{dev_name}.hunter.cryptograss.live")
 
 
+def setup_godot():
+    """Set up Godot game development workspace with godogen skills."""
+    logger.info("=== Setting up Godot development environment ===")
+
+    games_dir = Path("/home/magent/workspace/games")
+
+    # Only set up if godogen is available and games dir doesn't exist yet
+    godogen_dir = Path("/opt/godogen")
+    if not godogen_dir.exists():
+        logger.warning("godogen not found at /opt/godogen, skipping Godot setup")
+        return
+
+    if games_dir.exists():
+        logger.info("✓ Godot games workspace already exists")
+        return
+
+    # Publish godogen skills to a new game project directory
+    logger.info("Publishing godogen skills to games workspace...")
+    games_dir.mkdir(parents=True, exist_ok=True)
+    run_command(f"chown magent:magent {games_dir}")
+    run_command(f"bash /opt/godogen/publish.sh {games_dir}", user='magent')
+    logger.info("✓ Godot games workspace ready at ~/workspace/games")
+
+    # Verify Godot is available
+    result = run_command("godot --version", check=False)
+    if result.returncode == 0:
+        logger.info(f"✓ Godot available: {result.stdout.strip()}")
+    else:
+        logger.warning("⚠ Godot binary not responding (may need display for full init)")
+
+
 def start_services():
     """Start required services."""
     logger.info("=== Starting services ===")
@@ -557,6 +588,7 @@ def main():
         configure_github_cli()
         configure_mcp_server()
         configure_claude_settings()
+        setup_godot()
         start_services()
 
         logger.info("=" * 60)
