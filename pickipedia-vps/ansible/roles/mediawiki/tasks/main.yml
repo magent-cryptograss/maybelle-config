@@ -119,18 +119,23 @@
     - "{{ mediawiki_root }}/images"
     - "{{ mediawiki_root }}/cache"
 
+- name: Check if MediaUploader is installed
+  stat:
+    path: "{{ mediawiki_root }}/extensions/MediaUploader/extension.json"
+  register: mediauploader_check
+
 - name: Install MediaUploader extension
-  git:
-    repo: https://github.com/wikimedia/mediawiki-extensions-MediaUploader.git
-    dest: "{{ mediawiki_root }}/extensions/MediaUploader"
-    version: REL1_43
-    force: yes
+  command:
+    cmd: git clone --branch REL1_43 --depth 1 https://github.com/wikimedia/mediawiki-extensions-MediaUploader.git MediaUploader
+    chdir: "{{ mediawiki_root }}/extensions"
+    creates: "{{ mediawiki_root }}/extensions/MediaUploader"
+  when: not mediauploader_check.stat.exists
 
 - name: Install MediaUploader composer dependencies
   command:
     cmd: composer install --no-dev --no-interaction
     chdir: "{{ mediawiki_root }}/extensions/MediaUploader"
-  changed_when: false
+  when: not mediauploader_check.stat.exists
 
 - name: Set MediaUploader ownership
   file:
