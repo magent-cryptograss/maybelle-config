@@ -39,15 +39,12 @@
   copy:
     dest: /etc/caddy/Caddyfile
     content: |
-      # PickiPedia - SSL + PHP-FPM (Caddy direct to FastCGI, no nginx)
-      # Eliminates HTTP/1.x proxy body loss on multipart uploads
+      # PickiPedia - SSL termination and reverse proxy
+      # Caddy automatically handles Let's Encrypt certificates
 
       {{ domain_name }}, {{ www_domain }} {
-          root * {{ mediawiki_root }}
-
-          # Handle www redirect
-          @www host {{ www_domain }}
-          redir @www https://{{ domain_name }}{uri} permanent
+          # Reverse proxy to Nginx (which handles PHP-FPM)
+          reverse_proxy 127.0.0.1:8080
 
           # Security headers
           header {
@@ -60,40 +57,9 @@
           # Compression
           encode gzip zstd
 
-          # Block sensitive directories
-          @sensitive path /cache/* /includes/* /languages/* /maintenance/* /tests/* /vendor/*
-          respond @sensitive 403
-
-          # Block dotfiles
-          @dotfiles path /.*
-          respond @dotfiles 403
-
-          # Block PHP execution in images and extensions
-          @imgphp path /images/*.php
-          respond @imgphp 403
-          @extphp path /extensions/*.php
-          respond @extphp 403
-
-          # Static assets with caching
-          @static path /skins/* /resources/* /extensions/* /images/*
-          header @static Cache-Control "public, max-age=2592000"
-
-          # PHP-FPM via FastCGI (direct, no HTTP proxy)
-          @phpfiles path *.php
-          handle @phpfiles {
-              php_fastcgi unix//run/php/php{{ php_version }}-fpm-mediawiki.sock
-          }
-
-          # MediaWiki short URLs: /wiki/Page_Name -> /index.php?title=Page_Name
-          @notfile {
-              not file
-              not path /api.php /rest.php /index.php /load.php
-          }
-          rewrite @notfile /index.php?title={uri}
-
-          # Serve files or fall through to index.php
-          try_files {path} /index.php?title={path}
-          file_server
+          # Handle www redirect
+          @www host {{ www_domain }}
+          redir @www https://{{ domain_name }}{uri} permanent
       }
 
       # Health check endpoint (for monitoring from maybelle)
