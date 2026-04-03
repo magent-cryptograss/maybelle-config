@@ -43,8 +43,20 @@
       # Caddy automatically handles Let's Encrypt certificates
 
       {{ domain_name }}, {{ www_domain }} {
+          # Allow large uploads (for MediaUploader chunked uploads)
+          request_body {
+              max_size 2GB
+          }
+
           # Reverse proxy to Nginx (which handles PHP-FPM)
-          reverse_proxy 127.0.0.1:8080
+          reverse_proxy 127.0.0.1:8080 {
+              flush_interval -1
+              transport http {
+                  response_header_timeout 300s
+                  read_timeout 300s
+                  write_timeout 300s
+              }
+          }
 
           # Security headers
           header {
