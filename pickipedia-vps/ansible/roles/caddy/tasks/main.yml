@@ -42,8 +42,10 @@
       # Global options
       {
           servers {
-              # Disable HTTP/3 - QUIC POST body not forwarded to HTTP/1.x backend
-              protocols h1 h2
+              # HTTP/1.1 only - Caddy has a known bug where HTTP/2 and HTTP/3
+              # drop multipart POST bodies when reverse proxying to HTTP/1.x backend
+              # See: https://github.com/caddyserver/caddy/issues/3496
+              protocols h1
           }
       }
 
