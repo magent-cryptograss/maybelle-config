@@ -38,22 +38,8 @@
     state: started
     enabled: yes
 
-# Migration: stop bare-metal services if running
-- name: Stop and disable nginx (replaced by Docker Apache)
-  systemd:
-    name: nginx
-    state: stopped
-    enabled: no
-  ignore_errors: yes
-
-- name: Stop and disable PHP-FPM (replaced by Docker PHP)
-  systemd:
-    name: "php{{ php_version }}-fpm"
-    state: stopped
-    enabled: no
-  ignore_errors: yes
-
-# Deploy Docker config
+# Deploy Docker config and pre-build image BEFORE stopping nginx
+# This minimizes downtime — image build can take several minutes
 - name: Create Docker config directory
   file:
     path: /opt/pickipedia-docker
@@ -74,12 +60,26 @@
     mode: '0644'
   register: compose_changed
 
-# Build and run
-- name: Build wiki Docker image
+# Build image while nginx is still serving traffic
+- name: Build wiki Docker image (nginx still running)
   command:
     cmd: docker compose build
     chdir: /opt/pickipedia-docker
-  when: dockerfile_changed.changed or compose_changed.changed
+
+# Now the quick switchover — stop nginx, start container
+- name: Stop and disable nginx (replaced by Docker Apache)
+  systemd:
+    name: nginx
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Stop and disable PHP-FPM (replaced by Docker PHP)
+  systemd:
+    name: "php{{ php_version }}-fpm"
+    state: stopped
+    enabled: no
+  ignore_errors: yes
 
 - name: Start wiki container
   command:
