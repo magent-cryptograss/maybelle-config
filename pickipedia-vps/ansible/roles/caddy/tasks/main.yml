@@ -44,7 +44,10 @@
 
       {{ domain_name }}, {{ www_domain }} {
           # Reverse proxy to Nginx (which handles PHP-FPM)
-          reverse_proxy 127.0.0.1:8080
+          reverse_proxy 127.0.0.1:8080 {
+              header_up -Te
+              header_up -Alt-Used
+          }
 
           # Security headers
           header {
