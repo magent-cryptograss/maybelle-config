@@ -39,13 +39,6 @@
   copy:
     dest: /etc/caddy/Caddyfile
     content: |
-      # Global options
-      {
-          servers {
-              protocols h1 h2
-          }
-      }
-
       # PickiPedia - SSL termination and reverse proxy
       # Caddy automatically handles Let's Encrypt certificates
 
