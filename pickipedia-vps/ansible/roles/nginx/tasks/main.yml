@@ -1,22 +1,29 @@
 ---
-# Nginx as local PHP-FPM handler
-# Caddy handles SSL termination and proxies to nginx
+# Nginx as web server with SSL via certbot
+# Replaces Caddy for SSL termination - Caddy has a bug dropping
+# Firefox XHR multipart POST bodies through reverse_proxy
 
 - name: Install Nginx
   apt:
     name: nginx
     state: present
 
-- name: Create Nginx config for MediaWiki
+- name: Install Certbot
+  apt:
+    name:
+      - certbot
+      - python3-certbot-nginx
+    state: present
+
+- name: Create Nginx HTTP config for MediaWiki (pre-SSL)
   copy:
     dest: /etc/nginx/sites-available/mediawiki
     content: |
-      # MediaWiki Nginx configuration
-      # SSL handled by Caddy - this listens on localhost only
+      # MediaWiki Nginx configuration with SSL
 
       server {
-          listen 127.0.0.1:8080;
-          server_name _;
+          listen 80;
+          server_name {{ domain_name }} {{ www_domain }};
 
           root {{ mediawiki_root }};
           index index.php;
@@ -27,6 +34,16 @@
 
           # Client body size (for content pipeline uploads)
           client_max_body_size 2G;
+
+          # Security headers
+          add_header X-Content-Type-Options nosniff;
+          add_header X-Frame-Options SAMEORIGIN;
+          add_header Referrer-Policy strict-origin-when-cross-origin;
+
+          # www redirect
+          if ($host = {{ www_domain }}) {
+              return 301 https://{{ domain_name }}$request_uri;
+          }
 
           # MediaWiki short URLs
           location / {
@@ -54,6 +71,9 @@
               include fastcgi_params;
               fastcgi_pass unix:/run/php/php{{ php_version }}-fpm-mediawiki.sock;
               fastcgi_param SCRIPT_FILENAME $document_root/api.php;
+
+              fastcgi_read_timeout 300;
+              fastcgi_send_timeout 300;
           }
 
           # REST API
@@ -65,8 +85,6 @@
 
           # Images
           location /images {
-              # Serve uploaded files directly
-              # Disable PHP execution in images directory
               location ~ \.php$ {
                   deny all;
               }
@@ -82,8 +100,6 @@
           }
 
           location /extensions {
-              # Allow serving static files from extensions
-              # But deny PHP execution to prevent exploits
               location ~ \.php$ {
                   deny all;
               }
@@ -129,8 +145,33 @@
   command: nginx -t
   changed_when: false
 
-- name: Restart Nginx to release port 80
+- name: Restart Nginx
   systemd:
     name: nginx
     state: restarted
+    enabled: yes
+
+- name: Stop Caddy (nginx handles SSL now)
+  systemd:
+    name: caddy
+    state: stopped
+    enabled: no
+  ignore_errors: yes
+
+- name: Check if SSL cert exists
+  stat:
+    path: /etc/letsencrypt/live/{{ domain_name }}/fullchain.pem
+  register: ssl_cert
+
+- name: Obtain SSL certificate
+  command: >
+    certbot --nginx -d {{ domain_name }} -d {{ www_domain }}
+    --non-interactive --agree-tos --email {{ admin_email }}
+    --redirect
+  when: not ssl_cert.stat.exists
+
+- name: Ensure certbot auto-renewal timer is enabled
+  systemd:
+    name: certbot.timer
+    state: started
     enabled: yes

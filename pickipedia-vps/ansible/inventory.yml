@@ -14,6 +14,7 @@ all:
     # Domain and SSL
     domain_name: pickipedia.xyz
     www_domain: www.pickipedia.xyz
+    admin_email: justin@cryptograss.live
 
     # MediaWiki version
     mediawiki_version: "1.43.6"
