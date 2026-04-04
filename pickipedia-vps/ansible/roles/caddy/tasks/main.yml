@@ -21,11 +21,31 @@
     state: present
     filename: caddy-stable
 
-- name: Install Caddy
+- name: Install Caddy from apt (provides systemd unit and caddy user)
   apt:
     name: caddy
     state: present
     update_cache: yes
+
+- name: Pin Caddy to 2.6.2 (newer versions drop Firefox XHR POST bodies)
+  shell: |
+    CURRENT=$(caddy version 2>/dev/null | cut -d' ' -f1)
+    if [ "$CURRENT" != "v2.6.2" ]; then
+      systemctl stop caddy || true
+      curl -fsSL "https://caddyserver.com/api/download?os=linux&arch=amd64&version=v2.6.2" -o /usr/bin/caddy
+      chmod +x /usr/bin/caddy
+      systemctl start caddy
+      echo "changed"
+    else
+      echo "ok"
+    fi
+  register: caddy_pin
+  changed_when: "'changed' in caddy_pin.stdout"
+
+- name: Hold Caddy apt package to prevent auto-upgrade
+  dpkg_selections:
+    name: caddy
+    selection: hold
 
 - name: Create Caddy log directory
   file:
