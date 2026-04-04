@@ -71,12 +71,13 @@
       {{ domain_name }}, {{ www_domain }} {
           reverse_proxy 127.0.0.1:8080
 
-          # Security headers
+          # Security headers + strip Alt-Svc to prevent Firefox H3 upgrade
           header {
               X-Content-Type-Options nosniff
               X-Frame-Options SAMEORIGIN
               Referrer-Policy strict-origin-when-cross-origin
               -Server
+              -Alt-Svc
           }
 
           # Compression
