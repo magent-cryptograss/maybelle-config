@@ -62,6 +62,10 @@ RUN { \
     echo ''; \
     echo '; Date/time'; \
     echo 'date.timezone = UTC'; \
+    echo ''; \
+    echo '; MySQL socket (mounted from host)'; \
+    echo 'mysqli.default_socket = /var/run/mysqld/mysqld.sock'; \
+    echo 'pdo_mysql.default_socket = /var/run/mysqld/mysqld.sock'; \
     } > /usr/local/etc/php/conf.d/mediawiki.ini
 
 # No disable_functions or open_basedir — container is the sandbox
