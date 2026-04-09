@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .routes import health, albums, drafts, content, enrich, torrent, coconut, staging
-from .services import cleanup
 from .services.seeder import init_seeder, stop_seeder
 
 # Configure logging
@@ -40,14 +39,6 @@ async def lifespan(app: FastAPI):
     staging_dir.mkdir(parents=True, exist_ok=True)
     (staging_dir / "drafts").mkdir(exist_ok=True)
 
-    # Run startup cleanup
-    cleanup.startup_cleanup(staging_dir)
-
-    # Start periodic cleanup task
-    cleanup_task = asyncio.create_task(
-        cleanup.periodic_cleanup(staging_dir, interval_seconds=3600)
-    )
-
     # Start BitTorrent seeder
     init_seeder(settings.seeding_dir)
 
@@ -56,13 +47,6 @@ async def lifespan(app: FastAPI):
 
     # Shutdown: stop seeder first
     stop_seeder()
-
-    # Cancel cleanup task
-    cleanup_task.cancel()
-    try:
-        await cleanup_task
-    except asyncio.CancelledError:
-        pass
     logger.info("Delivery Kid pinning service stopped")
 
 

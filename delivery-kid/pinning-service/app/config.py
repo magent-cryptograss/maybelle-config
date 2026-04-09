@@ -30,7 +30,7 @@ class Settings(BaseSettings):
     coconut_api_key: str = ""
 
     # Auth settings
-    max_timestamp_drift_seconds: int = 3600  # 1 hour — token generated at page load, user may browse before uploading
+    max_timestamp_drift_seconds: int = 30 * 24 * 3600  # 30 days — tokens are checked on draft pages that may be revisited long after creation
     api_key: str = ""  # Shared API key for server-to-server auth (e.g., from PickiPedia)
 
     # Upload limits
