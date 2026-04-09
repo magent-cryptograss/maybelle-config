@@ -209,10 +209,14 @@ async def get_content_draft(
 @router.delete("/{draft_id}")
 async def delete_content_draft(
     draft_id: str,
+    request: Request,
     wallet_address: str = Depends(require_auth),
     settings: Settings = Depends(get_settings)
 ):
-    """Delete a content draft and clean up files."""
+    """Delete a content draft and clean up files.
+
+    Accessible by the original uploader OR any user with finalize-release.
+    """
     staging_dir = Path(settings.staging_dir)
     draft_dir = get_draft_dir(staging_dir, draft_id)
 
@@ -220,7 +224,8 @@ async def delete_content_draft(
     if state is None:
         raise HTTPException(status_code=404, detail="Content draft not found")
 
-    if state.uploaded_by.lower() != wallet_address.lower():
+    is_owner = state.uploaded_by.lower() == wallet_address.lower()
+    if not is_owner and not has_finalize_token(request, settings):
         raise HTTPException(status_code=403, detail="Not your draft")
 
     shutil.rmtree(draft_dir)
@@ -578,8 +583,8 @@ async def finalize_content_draft(
     if state is None:
         raise HTTPException(status_code=404, detail="Content draft not found")
 
-    if state.uploaded_by.lower() != wallet_address.lower():
-        raise HTTPException(status_code=403, detail="Not your draft")
+    # No ownership check — require_finalize_auth already ensures
+    # the user has finalize-release permission.
 
     return EventSourceResponse(
         finalize_sse_generator(draft_id, request, draft_dir, state, settings),
