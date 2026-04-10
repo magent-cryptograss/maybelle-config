@@ -7,6 +7,7 @@ services:
     volumes:
       # MediaWiki code — bind-mounted so Jenkins rsync updates are instant
       - {{ mediawiki_root }}:/var/www/html
-      # MariaDB socket — avoids TCP config, $wgDBserver stays "localhost"
-      - /var/run/mysqld/mysqld.sock:/var/run/mysqld/mysqld.sock
+      # MariaDB socket directory — mount the directory, not the socket file,
+      # so the container survives MariaDB restarts (which recreate the socket)
+      - /var/run/mysqld:/var/run/mysqld
     restart: unless-stopped
