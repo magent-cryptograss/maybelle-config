@@ -90,6 +90,8 @@ async def get_staging_file(
             raise HTTPException(status_code=401, detail="Invalid timestamp")
         if verify_upload_token(token, user, ts, settings, action="upload"):
             authenticated = True
+        elif verify_upload_token(token, user, ts, settings, action="finalize"):
+            authenticated = True
     if not authenticated:
         raise HTTPException(status_code=401, detail="Authentication required")
 
