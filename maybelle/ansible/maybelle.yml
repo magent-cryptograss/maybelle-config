@@ -176,7 +176,7 @@
           - name: jenkins-network
 
     - name: Update blue-railroad-import package
-      command: docker exec -u root jenkins /opt/blue-railroad-import/bin/pip install --force-reinstall --no-cache-dir git+https://github.com/cryptograss/blue-railroad-import.git
+      command: docker exec -u root jenkins /opt/blue-railroad-import/bin/pip install --force-reinstall --no-cache-dir git+https://github.com/cryptograss/blue-railroad-import.git@main
       register: pip_update
       changed_when: "'Successfully installed' in pip_update.stdout"
 
