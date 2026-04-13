@@ -16,12 +16,12 @@ pipelineJob('pickipedia-enrich-torrents') {
                     stages {
                         stage('Enrich torrents') {
                             steps {
-                                sh 'set +x && /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli enrich-torrents --wiki-url "https://pickipedia.xyz" --username "$BLUERAILROAD_BOT_USERNAME" --password "$BLUERAILROAD_BOT_PASSWORD" --delivery-kid-api-key "$DELIVERY_KID_API_KEY" -v'
+                                sh 'set +x && cd /opt/blue-railroad-import && python3 -m blue_railroad_import.cli enrich-torrents --wiki-url "https://pickipedia.xyz" --username "$BLUERAILROAD_BOT_USERNAME" --password "$BLUERAILROAD_BOT_PASSWORD" --delivery-kid-api-key "$DELIVERY_KID_API_KEY" -v'
                             }
                         }
                         stage('Enrich IPFS metadata') {
                             steps {
-                                sh 'set +x && /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli enrich-ipfs --wiki-url "https://pickipedia.xyz" --username "$BLUERAILROAD_BOT_USERNAME" --password "$BLUERAILROAD_BOT_PASSWORD" -v'
+                                sh 'set +x && cd /opt/blue-railroad-import && python3 -m blue_railroad_import.cli enrich-ipfs --wiki-url "https://pickipedia.xyz" --username "$BLUERAILROAD_BOT_USERNAME" --password "$BLUERAILROAD_BOT_PASSWORD" -v'
                             }
                         }
                     }

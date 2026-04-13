@@ -178,17 +178,12 @@
     - name: Clone or update blue-railroad-import
       command: >
         docker exec -u root jenkins bash -c '
-          if [ -d /opt/blue-railroad-import-src/.git ]; then
-            cd /opt/blue-railroad-import-src && git fetch origin && git reset --hard origin/production
+          if [ -d /opt/blue-railroad-import/.git ]; then
+            cd /opt/blue-railroad-import && git fetch origin && git reset --hard origin/production
           else
-            git clone --branch production https://github.com/cryptograss/blue-railroad-import.git /opt/blue-railroad-import-src
+            git clone --branch production https://github.com/cryptograss/blue-railroad-import.git /opt/blue-railroad-import
           fi
         '
-      register: git_update
-
-    - name: Install blue-railroad-import from local checkout
-      command: docker exec -u root jenkins /opt/blue-railroad-import/bin/pip install --no-cache-dir /opt/blue-railroad-import-src
-      when: git_update.changed or git_update.rc == 0
 
     - name: Hash GlitchTip DSN fetch password for Caddy basicauth
       command: docker run --rm caddy caddy hash-password --plaintext '{{ glitchtip_dsn_fetch_password }}'

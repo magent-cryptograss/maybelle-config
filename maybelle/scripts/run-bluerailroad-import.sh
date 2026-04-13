@@ -9,19 +9,14 @@
 set -euo pipefail
 
 CHAIN_DATA="/var/jenkins_home/shared/chain_data/chainData.json"
+BRI_DIR="/opt/blue-railroad-import"
+PYTHON="python3"
 
 echo "=== Blue Railroad Import ==="
 
-# Show installed version
+# Show commit
 echo -n "blue-railroad-import: "
-docker exec jenkins /opt/blue-railroad-import/bin/pip show blue-railroad-import 2>/dev/null | grep -E "^(Version|Location)" | tr '\n' ' '
-echo ""
-echo -n "has all_token_ids: "
-docker exec jenkins /opt/blue-railroad-import/bin/python -c "
-import inspect
-from blue_railroad_import.release_page import ensure_release_for_token
-print('all_token_ids' in inspect.signature(ensure_release_for_token).parameters)
-" 2>/dev/null || echo "unknown"
+docker exec jenkins bash -c "cd $BRI_DIR && git log --oneline -1" 2>/dev/null || echo "unknown"
 echo ""
 
 # Check chain data exists
@@ -32,7 +27,7 @@ docker exec jenkins test -f "$CHAIN_DATA" || {
 
 echo "Running import..."
 docker exec jenkins bash -c "
-    /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli import \
+    cd $BRI_DIR && $PYTHON -m blue_railroad_import.cli import \
         --chain-data $CHAIN_DATA \
         --wiki-url https://pickipedia.xyz \
         --username \"\$BLUERAILROAD_BOT_USERNAME\" \
@@ -43,7 +38,7 @@ docker exec jenkins bash -c "
 echo ""
 echo "Running torrent enrichment..."
 docker exec jenkins bash -c "
-    /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli enrich-torrents \
+    cd $BRI_DIR && $PYTHON -m blue_railroad_import.cli enrich-torrents \
         --wiki-url https://pickipedia.xyz \
         --username \"\$BLUERAILROAD_BOT_USERNAME\" \
         --password \"\$BLUERAILROAD_BOT_PASSWORD\" \
@@ -54,7 +49,7 @@ docker exec jenkins bash -c "
 echo ""
 echo "Running IPFS metadata enrichment..."
 docker exec jenkins bash -c "
-    /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli enrich-ipfs \
+    cd $BRI_DIR && $PYTHON -m blue_railroad_import.cli enrich-ipfs \
         --wiki-url https://pickipedia.xyz \
         --username \"\$BLUERAILROAD_BOT_USERNAME\" \
         --password \"\$BLUERAILROAD_BOT_PASSWORD\" \
