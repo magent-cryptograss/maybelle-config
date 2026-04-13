@@ -50,11 +50,14 @@ ssh "$DK_HOST" "docker exec ipfs ipfs pin ls --type=recursive -q 2>/dev/null | h
 PIN_COUNT=$(wc -l < /tmp/audit-pins.txt)
 echo "  $PIN_COUNT recursive pins on IPFS node"
 
+# IPFS empty directory — every kubo node has this, ignore it
+IPFS_EMPTY_DIR="qmunllspaccz1vlxqvkxqqlx5r1x345qqfhbsf67hva3nn"
+
 # Check each pin against Release CIDs
 ORPHAN_PINS=0
 while IFS= read -r pin_cid; do
-    # Normalize: lowercase for comparison
     pin_lower=$(echo "$pin_cid" | tr '[:upper:]' '[:lower:]')
+    [ "$pin_lower" = "$IPFS_EMPTY_DIR" ] && continue
     found=false
     while IFS= read -r rel_cid; do
         rel_lower=$(echo "$rel_cid" | tr '[:upper:]' '[:lower:]')
@@ -69,6 +72,26 @@ while IFS= read -r pin_cid; do
     fi
 done < /tmp/audit-pins.txt
 echo "  $ORPHAN_PINS orphaned pins (not in any Release page)"
+
+# Check for Release pages with no IPFS pin
+UNPINNED=0
+while IFS= read -r rel_cid; do
+    [ -z "$rel_cid" ] && continue
+    rel_lower=$(echo "$rel_cid" | tr '[:upper:]' '[:lower:]')
+    found=false
+    while IFS= read -r pin_cid; do
+        pin_lower=$(echo "$pin_cid" | tr '[:upper:]' '[:lower:]')
+        if [ "$rel_lower" = "$pin_lower" ]; then
+            found=true
+            break
+        fi
+    done < /tmp/audit-pins.txt
+    if [ "$found" = false ]; then
+        echo "  UNPINNED RELEASE: $rel_cid"
+        UNPINNED=$((UNPINNED + 1))
+    fi
+done <<< "$RELEASE_CIDS"
+echo "  $UNPINNED releases with no IPFS pin"
 
 echo ""
 echo "--- Seeding Directories ---"
