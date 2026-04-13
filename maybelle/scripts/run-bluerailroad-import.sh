@@ -9,14 +9,13 @@
 set -euo pipefail
 
 CHAIN_DATA="/var/jenkins_home/shared/chain_data/chainData.json"
-BRI_DIR="/opt/blue-railroad-import"
-PYTHON="python3"
+PYTHON="/opt/blue-railroad-import/bin/python"
 
 echo "=== Blue Railroad Import ==="
 
-# Show commit
+# Show commit from source checkout
 echo -n "blue-railroad-import: "
-docker exec jenkins bash -c "cd $BRI_DIR && git log --oneline -1" 2>/dev/null || echo "unknown"
+docker exec jenkins bash -c "cd /opt/blue-railroad-import-src && git log --oneline -1" 2>/dev/null || echo "unknown"
 echo ""
 
 # Check chain data exists
@@ -27,7 +26,7 @@ docker exec jenkins test -f "$CHAIN_DATA" || {
 
 echo "Running import..."
 docker exec jenkins bash -c "
-    cd $BRI_DIR && $PYTHON -m blue_railroad_import.cli import \
+    $PYTHON -m blue_railroad_import.cli import \
         --chain-data $CHAIN_DATA \
         --wiki-url https://pickipedia.xyz \
         --username \"\$BLUERAILROAD_BOT_USERNAME\" \
@@ -38,7 +37,7 @@ docker exec jenkins bash -c "
 echo ""
 echo "Running torrent enrichment..."
 docker exec jenkins bash -c "
-    cd $BRI_DIR && $PYTHON -m blue_railroad_import.cli enrich-torrents \
+    $PYTHON -m blue_railroad_import.cli enrich-torrents \
         --wiki-url https://pickipedia.xyz \
         --username \"\$BLUERAILROAD_BOT_USERNAME\" \
         --password \"\$BLUERAILROAD_BOT_PASSWORD\" \
@@ -49,7 +48,7 @@ docker exec jenkins bash -c "
 echo ""
 echo "Running IPFS metadata enrichment..."
 docker exec jenkins bash -c "
-    cd $BRI_DIR && $PYTHON -m blue_railroad_import.cli enrich-ipfs \
+    $PYTHON -m blue_railroad_import.cli enrich-ipfs \
         --wiki-url https://pickipedia.xyz \
         --username \"\$BLUERAILROAD_BOT_USERNAME\" \
         --password \"\$BLUERAILROAD_BOT_PASSWORD\" \
