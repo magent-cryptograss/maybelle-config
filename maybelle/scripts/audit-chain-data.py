@@ -46,8 +46,8 @@ def main():
     with open(CHAIN_DATA) as f:
         d = json.load(f)
 
-    # Build token info
-    tokens = {}
+    # Group tokens by CID
+    cid_tokens = {}  # cid -> list of (token_id, song_id)
     for key in ['blueRailroads', 'blueRailroadV2s']:
         for tid, t in d.get(key, {}).items():
             song_id = str(t.get('songId', ''))
@@ -60,18 +60,8 @@ def main():
             elif uri and uri.startswith('ipfs://'):
                 cid = uri[7:]
 
-            song_exercise = SONG_MAP.get(song_id)
-            if song_exercise:
-                song_name, exercise = song_exercise
-                expected_title = f"{song_name} ({exercise}) #{tid}"
-            else:
-                expected_title = None
-
-            tokens[tid] = {
-                'cid': cid,
-                'song_id': song_id,
-                'expected_title': expected_title,
-            }
+            if cid:
+                cid_tokens.setdefault(cid, []).append((int(tid), song_id))
 
     # Fetch releases from wiki
     url = f"{WIKI_API}?action=releaselist&format=json"
@@ -83,21 +73,29 @@ def main():
         cid = r.get('ipfs_cid') or r.get('page_title', '')
         release_by_cid[cid.lower()] = r
 
-    # Check each token
+    # Check each CID group
     issues = 0
-    for tid in sorted(tokens, key=lambda x: int(x)):
-        t = tokens[tid]
-        cid = t['cid']
-        if not cid:
-            continue
+    for cid in sorted(cid_tokens, key=lambda c: min(tid for tid, _ in cid_tokens[c])):
+        token_list = cid_tokens[cid]
+        token_ids = sorted(tid for tid, _ in token_list)
+        song_id = token_list[0][1]  # all tokens for same CID should have same song
+
+        song_exercise = SONG_MAP.get(song_id)
+        if song_exercise:
+            song_name, exercise = song_exercise
+            id_str = ', '.join(f'#{tid}' for tid in token_ids)
+            expected_title = f"{song_name} ({exercise}) {id_str}"
+        else:
+            expected_title = None
 
         rel = release_by_cid.get(cid.lower())
         if not rel:
-            print(f"  NO RELEASE: Token #{tid} CID={cid[:16]}...")
+            id_str = ', '.join(f'#{tid}' for tid in token_ids)
+            print(f"  NO RELEASE: Tokens {id_str} CID={cid[:16]}...")
             issues += 1
-        elif t['expected_title'] and rel.get('title') != t['expected_title']:
-            print(f"  TITLE MISMATCH: Token #{tid}")
-            print(f"    expected: {t['expected_title']}")
+        elif expected_title and rel.get('title') != expected_title:
+            print(f"  TITLE MISMATCH: Tokens {', '.join(f'#{t}' for t in token_ids)}")
+            print(f"    expected: {expected_title}")
             print(f"    actual:   {rel.get('title', '(none)')}")
             issues += 1
 
