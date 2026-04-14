@@ -189,6 +189,10 @@
     - name: Install blue-railroad-import from local checkout
       command: docker exec -u root jenkins /opt/blue-railroad-import/bin/pip install --no-cache-dir --no-deps --force-reinstall /opt/blue-railroad-import-src
 
+    - name: Fix blue-railroad-cache permissions
+      command: docker exec -u root jenkins chown -R jenkins:jenkins /mnt/persist/blue-railroad-cache
+      failed_when: false
+
     - name: Hash GlitchTip DSN fetch password for Caddy basicauth
       command: docker run --rm caddy caddy hash-password --plaintext '{{ glitchtip_dsn_fetch_password }}'
       register: glitchtip_dsn_password_hash_result
