@@ -10,7 +10,7 @@ pipelineJob('pickipedia-import-bluerailroad') {
                     options {
                         disableConcurrentBuilds()
                         buildDiscarder(logRotator(numToKeepStr: '30'))
-                        timeout(time: 5, unit: 'MINUTES')
+                        timeout(time: 10, unit: 'MINUTES')
                     }
 
                     environment {
@@ -35,6 +35,16 @@ pipelineJob('pickipedia-import-bluerailroad') {
                         stage('Run import') {
                             steps {
                                 sh 'set +x && /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli import --chain-data "$CHAIN_DATA" --wiki-url "$WIKI_URL" --username "$BLUERAILROAD_BOT_USERNAME" --password "$BLUERAILROAD_BOT_PASSWORD" -v'
+                            }
+                        }
+                        stage('Enrich torrents') {
+                            steps {
+                                sh 'set +x && /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli enrich-torrents --wiki-url "$WIKI_URL" --username "$BLUERAILROAD_BOT_USERNAME" --password "$BLUERAILROAD_BOT_PASSWORD" --delivery-kid-api-key "$DELIVERY_KID_API_KEY" -v'
+                            }
+                        }
+                        stage('Enrich IPFS metadata') {
+                            steps {
+                                sh 'set +x && /opt/blue-railroad-import/bin/python -m blue_railroad_import.cli enrich-ipfs --wiki-url "$WIKI_URL" --username "$BLUERAILROAD_BOT_USERNAME" --password "$BLUERAILROAD_BOT_PASSWORD" -v'
                             }
                         }
                     }
