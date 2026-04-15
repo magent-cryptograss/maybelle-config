@@ -486,6 +486,7 @@ async def finalize_sse_generator(
                 return
 
             pin_path = hls_dir
+            transcode_metadata = result.transcode_info
 
             yield await send_event("progress", {
                 "stage": "transcode",
@@ -501,6 +502,7 @@ async def finalize_sse_generator(
                     shutil.copy2(src, output_dir / f.original_filename)
 
             pin_path = output_dir
+            transcode_metadata = None
 
             yield await send_event("progress", {
                 "stage": "organize",
@@ -518,6 +520,8 @@ async def finalize_sse_generator(
             "created_at": datetime.now(timezone.utc).isoformat(),
             **request.metadata,
         }
+        if transcode_metadata:
+            metadata["transcode"] = transcode_metadata
         metadata = {k: v for k, v in metadata.items() if v is not None}
 
         with open(pin_path / "metadata.json", "w") as f:

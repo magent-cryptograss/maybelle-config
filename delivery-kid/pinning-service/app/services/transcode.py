@@ -1,9 +1,10 @@
 """Media transcoding - audio (FLAC to OGG) and video (to HLS)."""
 
 import asyncio
+import json
 import shutil
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, Callable, Awaitable
 
 
@@ -12,6 +13,25 @@ class TranscodeResult:
     success: bool
     output_path: Optional[Path] = None
     error: Optional[str] = None
+    # Rich metadata about what was produced
+    transcode_info: Optional[dict] = field(default=None)
+
+
+async def probe_video(path: Path) -> Optional[dict]:
+    """Use ffprobe to get video file metadata."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe", "-v", "quiet", "-print_format", "json",
+            "-show_format", "-show_streams", str(path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return None
+        return json.loads(stdout.decode())
+    except Exception:
+        return None
 
 
 async def transcode_flac_to_ogg(
@@ -192,6 +212,7 @@ async def transcode_video_to_hls(
             "-c:v", "libx264",
             "-preset", "medium",
             "-crf", "23",
+            "-pix_fmt", "yuv420p",  # Force 8-bit — 10-bit breaks Firefox
             # Audio: AAC
             "-c:a", "aac",
             "-b:a", "128k",
@@ -218,7 +239,74 @@ async def transcode_video_to_hls(
         if not master_playlist.exists():
             return TranscodeResult(success=False, error="master.m3u8 not created")
 
-        return TranscodeResult(success=True, output_path=output_dir)
+        # Gather transcode metadata
+        segments = sorted(output_dir.glob("segment_*.ts"))
+        segment_sizes = {s.name: s.stat().st_size for s in segments}
+        total_output_size = sum(segment_sizes.values())
+
+        # Probe the first segment for output codec details
+        output_probe = await probe_video(segments[0]) if segments else None
+        output_streams = {}
+        if output_probe:
+            for stream in output_probe.get("streams", []):
+                if stream["codec_type"] == "video":
+                    output_streams["video"] = {
+                        "codec": stream.get("codec_name"),
+                        "profile": stream.get("profile"),
+                        "pix_fmt": stream.get("pix_fmt"),
+                        "width": stream.get("width"),
+                        "height": stream.get("height"),
+                    }
+                elif stream["codec_type"] == "audio":
+                    output_streams["audio"] = {
+                        "codec": stream.get("codec_name"),
+                        "sample_rate": stream.get("sample_rate"),
+                        "channels": stream.get("channels"),
+                    }
+
+        # Probe the source for input details
+        source_probe = await probe_video(input_path)
+        source_info = {}
+        if source_probe:
+            fmt = source_probe.get("format", {})
+            source_info["duration_seconds"] = float(fmt.get("duration", 0))
+            source_info["size_bytes"] = int(fmt.get("size", 0))
+            source_info["format"] = fmt.get("format_long_name")
+            for stream in source_probe.get("streams", []):
+                if stream["codec_type"] == "video":
+                    source_info["video_codec"] = stream.get("codec_name")
+                    source_info["pix_fmt"] = stream.get("pix_fmt")
+                    source_info["width"] = stream.get("width")
+                    source_info["height"] = stream.get("height")
+                elif stream["codec_type"] == "audio":
+                    source_info["audio_codec"] = stream.get("codec_name")
+
+        transcode_info = {
+            "method": "local-ffmpeg",
+            "output_codec": output_streams.get("video", {}).get("codec"),
+            "output_pix_fmt": output_streams.get("video", {}).get("pix_fmt"),
+            "output_width": output_streams.get("video", {}).get("width"),
+            "output_height": output_streams.get("video", {}).get("height"),
+            "output_audio_codec": output_streams.get("audio", {}).get("codec"),
+            "segment_count": len(segments),
+            "total_output_size_bytes": total_output_size,
+            "source": source_info,
+            "ffmpeg_settings": {
+                "video_codec": "libx264",
+                "preset": "medium",
+                "crf": 23,
+                "pix_fmt": "yuv420p",
+                "audio_codec": "aac",
+                "audio_bitrate": "128k",
+                "hls_segment_duration": 6,
+            },
+        }
+
+        return TranscodeResult(
+            success=True,
+            output_path=output_dir,
+            transcode_info=transcode_info,
+        )
 
     except Exception as e:
         return TranscodeResult(success=False, error=str(e))

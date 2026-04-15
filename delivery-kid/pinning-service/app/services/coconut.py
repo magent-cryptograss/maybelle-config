@@ -224,6 +224,54 @@ async def _download_segments(
                 logger.warning("Error downloading segment %s: %s", line, e)
 
 
+def _build_coconut_transcode_info(job: dict, outputs: dict, hls_dir: Path) -> dict:
+    """Build transcode metadata from Coconut job results."""
+    # Determine quality variants from output keys
+    qualities = []
+    for key in outputs:
+        if key.startswith("hls_av1_") and key.endswith("p"):
+            height = key.replace("hls_av1_", "").replace("p", "")
+            try:
+                qualities.append(int(height))
+            except ValueError:
+                pass
+    qualities.sort(reverse=True)
+
+    # Measure output sizes per quality
+    variant_sizes = {}
+    for q in qualities:
+        q_dir = hls_dir / f"{q}p"
+        if q_dir.exists():
+            total = sum(f.stat().st_size for f in q_dir.iterdir() if f.is_file())
+            segment_count = len(list(q_dir.glob("*.ts")) + list(q_dir.glob("*.m4s")))
+            variant_sizes[f"{q}p"] = {
+                "size_bytes": total,
+                "segment_count": segment_count,
+            }
+
+    total_output_size = sum(v["size_bytes"] for v in variant_sizes.values())
+
+    info = {
+        "method": "coconut",
+        "output_codec": "av1",
+        "output_audio_codec": "opus",
+        "qualities": [f"{q}p" for q in qualities],
+        "variants": variant_sizes,
+        "total_output_size_bytes": total_output_size,
+        "coconut_settings": {
+            "video_codec": "av1",
+            "audio_codec": "opus",
+            "audio_bitrate": "128k",
+            "hls_segment_duration": 6,
+        },
+    }
+
+    if job.get("previewCid"):
+        info["preview_mp4_cid"] = job["previewCid"]
+
+    return info
+
+
 async def process_completed_job(
     job: dict,
     outputs: dict,
@@ -262,6 +310,18 @@ async def process_completed_job(
                         preview_path.unlink(missing_ok=True)
             except Exception as e:
                 logger.warning("[%s] Preview download/pin failed: %s", job_id, e)
+
+        # Build and write transcode metadata before pinning
+        transcode_info = _build_coconut_transcode_info(job, outputs, hls_dir)
+        metadata = {
+            "title": job.get("title"),
+            "uploaded_by": job.get("identity"),
+            "created_at": job.get("createdAt"),
+            "transcode": transcode_info,
+        }
+        metadata = {k: v for k, v in metadata.items() if v is not None}
+        metadata_path = hls_dir / "metadata.json"
+        metadata_path.write_text(json.dumps(metadata, indent=2, default=str))
 
         # Pin HLS to IPFS
         logger.info("[%s] Pinning HLS directory to IPFS...", job_id)
