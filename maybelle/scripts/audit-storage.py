@@ -155,9 +155,15 @@ def human_size(kb: int) -> str:
     return f"{kb / 1024 / 1024:.1f}G"
 
 
-def audit_pins(releases: list[dict], pins: set[str]) -> dict:
-    """Return {orphan_pins, missing_pins, deleted, retired} lists."""
+def audit_pins(releases: list[dict], pins: set[str], seeding: list[str]) -> dict:
+    """Cross-reference Release pages against IPFS pins + seeding dirs.
+
+    Captures per-release state (pinned, seeded, pinned_on) so the summary can
+    flag cases where YAML says delete/unpin but the infrastructure is still
+    alive — the "cleanup pending" state.
+    """
     release_cids = {r.get("ipfs_cid", "").lower() for r in releases if r.get("ipfs_cid")}
+    seed_cids = {s.lower() for s in seeding}
 
     orphan_pins = []
     for pin in pins:
@@ -171,8 +177,9 @@ def audit_pins(releases: list[dict], pins: set[str]) -> dict:
         cid = r.get("ipfs_cid") or r.get("page_title") or ""
         title = r.get("title") or cid[:16]
         pinned = cid.lower() in pins
+        seeded = cid.lower() in seed_cids
 
-        # Parse YAML for delete/unpin flags
+        # Parse YAML for delete/unpin flags + pinned_on
         ydata = {}
         try:
             raw = page_content(f"Release:{cid}")
@@ -182,7 +189,9 @@ def audit_pins(releases: list[dict], pins: set[str]) -> dict:
         except Exception:
             pass
 
-        entry = {"cid": cid, "title": title, "pinned": pinned}
+        pinned_on = ydata.get("pinned_on") or []
+        entry = {"cid": cid, "title": title, "pinned": pinned,
+                 "seeded": seeded, "pinned_on": pinned_on}
         if ydata.get("delete"):
             deleted.append(entry)
         elif ydata.get("unpin"):
@@ -242,16 +251,29 @@ def print_section(title: str):
     print(f"\n--- {title} ---")
 
 
+def _alive_flags(entry: dict) -> list[str]:
+    flags = []
+    if entry.get("pinned"):
+        flags.append("pinned")
+    if entry.get("seeded"):
+        flags.append("seeded")
+    if entry.get("pinned_on"):
+        flags.append(f"pinned_on={','.join(entry['pinned_on'])}")
+    return flags
+
+
 def print_pin_audit(result: dict, release_count: int):
     if result["deleted"]:
         print(f"  Deleted releases ({len(result['deleted'])}):")
         for r in result["deleted"]:
-            state = "STILL PINNED" if r["pinned"] else "unpinned"
+            alive = _alive_flags(r)
+            state = "CLEANUP PENDING: " + ", ".join(alive) if alive else "fully cleaned"
             print(f"    {r['cid'][:16]}... {r['title']} [{state}]")
     if result["retired"]:
         print(f"  Retired releases ({len(result['retired'])}):")
         for r in result["retired"]:
-            state = "STILL PINNED" if r["pinned"] else "unpinned"
+            alive = _alive_flags(r)
+            state = "CLEANUP PENDING: " + ", ".join(alive) if alive else "fully cleaned"
             print(f"    {r['cid'][:16]}... {r['title']} [{state}]")
     if result["missing_pins"]:
         print(f"  MISSING PINS ({len(result['missing_pins'])}):")
@@ -332,7 +354,7 @@ def main():
     print(f"  {staging_count} staging draft directories")
 
     print_section("IPFS Pins vs Release Pages")
-    pin_result = audit_pins(releases, pins)
+    pin_result = audit_pins(releases, pins, seeding)
     print_pin_audit(pin_result, release_count)
 
     print_section("Seeding Dirs vs Release Pages")
@@ -373,6 +395,13 @@ def main():
     print(f"  Orphan drafts:       {len(draft_result['orphan_drafts'])}")
     print(f"  Stalled drafts:      {len(draft_result['stalled_drafts'])}")
     print(f"  Dead wiki drafts:    {len(draft_result['dead_wiki_drafts'])}")
+
+    cleanup_pending = sum(
+        1 for r in pin_result["deleted"] + pin_result["retired"]
+        if _alive_flags(r)
+    )
+    print(f"  Cleanup pending:     {cleanup_pending} "
+          f"(deleted/retired releases with alive pin, seed, or pinned_on)")
 
     print("\n=== Audit Complete ===")
 
