@@ -66,4 +66,4 @@ echo "  - Release:Bafybeifqvfdhvf6w34rytzukctrgafvwbfh6vcub3ol5antadidxrvmhri (d
 echo ""
 echo "=== Cleanup Complete ==="
 echo ""
-echo "Run audit-storage-remote.sh to verify."
+echo "Run audit-storage.py to verify."

@@ -19,6 +19,8 @@ Checks performed:
      - ORPHAN DRAFT: staging dir but no wiki page
      - STALLED DRAFT: wiki page + empty/incomplete staging (no draft.json or empty upload/)
      - DEAD WIKI DRAFT: wiki page but no staging, never finalized
+     - ABANDONED DRAFT: wiki page flagged `abandoned: true` (shown separately,
+       with alive infra flagged as CLEANUP PENDING)
 
   4. Blue Railroad chain data vs Release pages
      - Delegates to audit-chain-data.py on maybelle
@@ -212,7 +214,25 @@ def audit_seeding(releases: list[dict], seeding: list[str]) -> dict:
     return {"orphan_seeds": orphan_seeds, "missing_seeds": missing_seeds}
 
 
-def audit_drafts(wiki_draft_ids: list[str], staging_drafts: list[dict]) -> dict:
+def fetch_abandoned_drafts(wiki_draft_ids: list[str]) -> dict[str, str]:
+    """Return {draft_id_lower: reason} for drafts flagged `abandoned: true`."""
+    abandoned = {}
+    for w in wiki_draft_ids:
+        try:
+            raw = page_content(f"ReleaseDraft:{w}")
+            data = yaml.safe_load(raw) if raw else None
+        except Exception:
+            continue
+        if isinstance(data, dict) and data.get("abandoned"):
+            abandoned[w.lower()] = data.get("abandoned_reason") or ""
+    return abandoned
+
+
+def audit_drafts(
+    wiki_draft_ids: list[str],
+    staging_drafts: list[dict],
+    abandoned: dict[str, str],
+) -> dict:
     staging_by_id = {d["id"].lower(): d for d in staging_drafts}
     wiki_lower = {w.lower(): w for w in wiki_draft_ids}
 
@@ -220,31 +240,49 @@ def audit_drafts(wiki_draft_ids: list[str], staging_drafts: list[dict]) -> dict:
     stalled_drafts = []     # wiki page + no draft.json + empty upload/
     dead_wiki_drafts = []   # wiki page, no staging, never finalized
     finalized_gone = []     # wiki page, no staging, WAS finalized (expected)
+    abandoned_drafts = []   # wiki page flagged `abandoned: true`
 
     for d in staging_drafts:
-        if d["id"].lower() not in wiki_lower:
+        lower = d["id"].lower()
+        if lower not in wiki_lower:
             orphan_drafts.append(d)
+            continue
+        if lower in abandoned:
+            abandoned_drafts.append({
+                **d, "wiki_title": wiki_lower[lower],
+                "reason": abandoned[lower], "has_staging": True,
+            })
         elif not d["has_draft_json"] and d["upload_files"] == 0:
-            stalled_drafts.append({**d, "wiki_title": wiki_lower[d["id"].lower()]})
+            stalled_drafts.append({**d, "wiki_title": wiki_lower[lower]})
+
+    seen_abandoned_with_staging = {a["wiki_title"].lower() for a in abandoned_drafts}
 
     for w in wiki_draft_ids:
-        if w.lower() not in staging_by_id:
-            # Check if ever finalized
-            is_finalized = False
-            try:
-                for c in page_comments(f"ReleaseDraft:{w}"):
-                    if "pinned to IPFS" in c:
-                        is_finalized = True
-                        break
-            except Exception:
-                pass
-            if is_finalized:
-                finalized_gone.append(w)
-            else:
-                dead_wiki_drafts.append(w)
+        lower = w.lower()
+        if lower in staging_by_id:
+            continue
+        if lower in abandoned and lower not in seen_abandoned_with_staging:
+            abandoned_drafts.append({
+                "wiki_title": w, "reason": abandoned[lower], "has_staging": False,
+            })
+            continue
+        # Check if ever finalized
+        is_finalized = False
+        try:
+            for c in page_comments(f"ReleaseDraft:{w}"):
+                if "pinned to IPFS" in c:
+                    is_finalized = True
+                    break
+        except Exception:
+            pass
+        if is_finalized:
+            finalized_gone.append(w)
+        else:
+            dead_wiki_drafts.append(w)
 
     return {"orphan_drafts": orphan_drafts, "stalled_drafts": stalled_drafts,
-            "dead_wiki_drafts": dead_wiki_drafts, "finalized_gone": finalized_gone}
+            "dead_wiki_drafts": dead_wiki_drafts, "finalized_gone": finalized_gone,
+            "abandoned_drafts": abandoned_drafts}
 
 
 def print_section(title: str):
@@ -319,6 +357,12 @@ def print_draft_audit(result: dict, wiki_count: int, staging_count: int):
               f"never finalized, no staging (safe to delete from wiki):")
         for w in result["dead_wiki_drafts"]:
             print(f"    {w}")
+    if result["abandoned_drafts"]:
+        print(f"  ABANDONED DRAFTS ({len(result['abandoned_drafts'])}) — flagged `abandoned: true`:")
+        for a in result["abandoned_drafts"]:
+            state = "CLEANUP PENDING: staging dir" if a["has_staging"] else "clean"
+            reason = f" — {a['reason']}" if a["reason"] else ""
+            print(f"    {a['wiki_title'][:36]} [{state}]{reason}")
     if result["finalized_gone"]:
         print(f"  {len(result['finalized_gone'])} finalized wiki drafts without staging "
               f"(expected — staging cleaned on finalize)")
@@ -361,8 +405,12 @@ def main():
     seed_result = audit_seeding(releases, seeding)
     print_seeding_audit(seed_result, seed_count)
 
+    print("Scanning wiki drafts for `abandoned: true`...")
+    abandoned = fetch_abandoned_drafts(wiki_draft_ids)
+    print(f"  {len(abandoned)} abandoned")
+
     print_section("Staging Drafts vs Wiki ReleaseDraft Pages")
-    draft_result = audit_drafts(wiki_draft_ids, staging_drafts)
+    draft_result = audit_drafts(wiki_draft_ids, staging_drafts, abandoned)
     print_draft_audit(draft_result, draft_count, staging_count)
 
     print_section("Blue Railroad Chain Data vs Releases")
@@ -395,13 +443,15 @@ def main():
     print(f"  Orphan drafts:       {len(draft_result['orphan_drafts'])}")
     print(f"  Stalled drafts:      {len(draft_result['stalled_drafts'])}")
     print(f"  Dead wiki drafts:    {len(draft_result['dead_wiki_drafts'])}")
+    print(f"  Abandoned drafts:    {len(draft_result['abandoned_drafts'])}")
 
     cleanup_pending = sum(
         1 for r in pin_result["deleted"] + pin_result["retired"]
         if _alive_flags(r)
     )
+    cleanup_pending += sum(1 for a in draft_result["abandoned_drafts"] if a["has_staging"])
     print(f"  Cleanup pending:     {cleanup_pending} "
-          f"(deleted/retired releases with alive pin, seed, or pinned_on)")
+          f"(deleted/retired releases + abandoned drafts with alive infra)")
 
     print("\n=== Audit Complete ===")
 
