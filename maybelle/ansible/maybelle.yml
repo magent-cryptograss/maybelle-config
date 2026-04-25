@@ -151,6 +151,10 @@
           - "/mnt/persist/magenta/backups:/mnt/persist/magenta/backups:ro"
           - "/mnt/persist/pickipedia/backups:/mnt/persist/pickipedia/backups:ro"
           - "/mnt/persist/blue-railroad-cache:/mnt/persist/blue-railroad-cache"
+          # Read-only access to maybelle-config so jenkins jobs can invoke
+          # scripts and python modules in maybelle/scripts/ (e.g. the
+          # delivery-kid-audit job runs post-audit-to-wiki.py from here).
+          - "/mnt/persist/maybelle-config:/mnt/persist/maybelle-config:ro"
           - "/var/log/nfs-backup.log:/var/log/nfs-backup.log:ro"
           - "/var/log/nfs-deploy.log:/var/log/nfs-deploy.log:ro"
           - "/var/log/pickipedia-backup.log:/var/log/pickipedia-backup.log:ro"
