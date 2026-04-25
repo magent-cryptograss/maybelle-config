@@ -46,13 +46,10 @@ jobs:
   - file: /var/jenkins_home/jobs/arthel-production-build.groovy
   - file: /var/jenkins_home/jobs/arthel-branches-builds.groovy
   - file: /var/jenkins_home/jobs/arthel-fetch-chain-data.groovy
-  - file: /var/jenkins_home/jobs/arthel-rsync-status.groovy
+  - file: /var/jenkins_home/jobs/cron-health.groovy
   - file: /var/jenkins_home/jobs/deploy-hunter.groovy
-  - file: /var/jenkins_home/jobs/backup-memory-lane.groovy
   - file: /var/jenkins_home/jobs/pickipedia-build.groovy
-  - file: /var/jenkins_home/jobs/pickipedia-rsync-status.groovy
   - file: /var/jenkins_home/jobs/pickipedia-uptime.groovy
-  - file: /var/jenkins_home/jobs/backup-pickipedia.groovy
   - file: /var/jenkins_home/jobs/pickipedia-import-bluerailroad.groovy
   - file: /var/jenkins_home/jobs/arthel-fetch-pinata-data.groovy
   - file: /var/jenkins_home/jobs/pickipedia-enrich-torrents.groovy

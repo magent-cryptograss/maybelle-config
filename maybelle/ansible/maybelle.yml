@@ -528,6 +528,23 @@
         group: 1000
       notify: Restart Jenkins container
 
+    # Clean up retired job-DSL .groovy files at the Jenkins destination.
+    # `copy` doesn't delete files at dest that aren't in src, so removing a
+    # .groovy from jobs/ leaves the old definition lingering. The Jenkins
+    # job itself (in Jenkins's own DB) needs manual deletion via the UI
+    # after the first deploy that drops it from JCasC — this task only
+    # ensures the .groovy file isn't re-loaded on restart.
+    - name: Remove retired Jenkins job-DSL files
+      file:
+        path: "{{ jenkins_home }}/jobs/{{ item }}"
+        state: absent
+      loop:
+        - arthel-rsync-status.groovy
+        - pickipedia-rsync-status.groovy
+        - backup-pickipedia.groovy
+        - backup-memory-lane.groovy
+      notify: Restart Jenkins container
+
     - name: Create Jenkins secrets directory
       file:
         path: "{{ jenkins_home }}/secrets/0"
