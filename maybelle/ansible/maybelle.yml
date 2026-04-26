@@ -113,6 +113,45 @@
         group: 1000
       notify: Restart Jenkins container
 
+    # Job .groovy files MUST be copied before the container starts. JCasC's
+    # `jobs:` list references each .groovy by absolute path; if any file is
+    # missing when Jenkins boots, JCasC throws NoSuchFileException and
+    # Jenkins enters a crash loop. Earlier tasks like `docker exec jenkins
+    # ...` then fail and the playbook bails before reaching the jobs copy
+    # at the end — chicken-and-egg deadlock that requires manual recovery.
+    - name: Create Jenkins jobs directory
+      file:
+        path: "{{ jenkins_home }}/jobs"
+        state: directory
+        mode: '0755'
+        owner: 1000
+        group: 1000
+
+    - name: Copy Jenkins job definitions
+      copy:
+        src: "{{ playbook_dir }}/../jobs/"
+        dest: "{{ jenkins_home }}/jobs/"
+        mode: '0644'
+        owner: 1000
+        group: 1000
+      notify: Restart Jenkins container
+
+    # `copy` doesn't delete files at dest that aren't in src, so removing a
+    # .groovy from jobs/ leaves the old definition lingering. This task
+    # ensures retired .groovy files don't get re-loaded on restart. The
+    # Jenkins job records in Jenkins's own DB persist regardless and need
+    # one-time manual deletion from the UI.
+    - name: Remove retired Jenkins job-DSL files
+      file:
+        path: "{{ jenkins_home }}/jobs/{{ item }}"
+        state: absent
+      loop:
+        - arthel-rsync-status.groovy
+        - pickipedia-rsync-status.groovy
+        - backup-pickipedia.groovy
+        - backup-memory-lane.groovy
+      notify: Restart Jenkins container
+
     - name: Check if log paths are directories (Docker creates dirs for missing mount sources)
       stat:
         path: "{{ item }}"
@@ -511,39 +550,13 @@
         job: "/usr/local/bin/run-delivery-kid-audit.sh"
         minute: "0,30"
 
-    - name: Create Jenkins job definitions directory
+    - name: Create Jenkins casc_configs/jobs directory
       file:
         path: "{{ jenkins_home }}/casc_configs/jobs"
         state: directory
         mode: '0755'
         owner: 1000
         group: 1000
-
-    - name: Copy Jenkins job definitions
-      copy:
-        src: "{{ playbook_dir }}/../jobs/"
-        dest: "{{ jenkins_home }}/jobs/"
-        mode: '0644'
-        owner: 1000
-        group: 1000
-      notify: Restart Jenkins container
-
-    # Clean up retired job-DSL .groovy files at the Jenkins destination.
-    # `copy` doesn't delete files at dest that aren't in src, so removing a
-    # .groovy from jobs/ leaves the old definition lingering. The Jenkins
-    # job itself (in Jenkins's own DB) needs manual deletion via the UI
-    # after the first deploy that drops it from JCasC — this task only
-    # ensures the .groovy file isn't re-loaded on restart.
-    - name: Remove retired Jenkins job-DSL files
-      file:
-        path: "{{ jenkins_home }}/jobs/{{ item }}"
-        state: absent
-      loop:
-        - arthel-rsync-status.groovy
-        - pickipedia-rsync-status.groovy
-        - backup-pickipedia.groovy
-        - backup-memory-lane.groovy
-      notify: Restart Jenkins container
 
     - name: Create Jenkins secrets directory
       file:
