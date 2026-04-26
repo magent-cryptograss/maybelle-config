@@ -214,6 +214,40 @@
         networks:
           - name: jenkins-network
 
+    # Apply any pending Jenkins-restart handlers right now, before the
+    # docker-exec tasks below. If JCasC config or job .groovy files
+    # changed earlier in the play, the container needs to restart cleanly
+    # to pick them up.
+    - name: Apply pending Jenkins restart before docker-exec tasks
+      meta: flush_handlers
+
+    # If the container is currently in a crash loop from a previous bad
+    # deploy, no notify is pending (the file changes are idempotent on
+    # re-run), so flush_handlers above is a no-op. Inspect Jenkins's state
+    # and force a clean restart only when it's not already stably running —
+    # that breaks the restart-policy backoff and lets the new files take.
+    - name: Inspect Jenkins container state
+      command: docker inspect -f '{{ "{{" }}.State.Status{{ "}}" }}' jenkins
+      register: jenkins_state
+      changed_when: false
+
+    - name: Force-restart Jenkins if not running cleanly
+      docker_container:
+        name: jenkins
+        state: started
+        restart: true
+      when: jenkins_state.stdout != "running"
+
+    # Wait until docker exec actually works — being briefly in "running"
+    # state during a crash-loop flash doesn't mean exec will succeed.
+    - name: Wait for Jenkins container to accept docker exec
+      command: docker exec jenkins true
+      register: jenkins_exec_ready
+      until: jenkins_exec_ready.rc == 0
+      retries: 30
+      delay: 2
+      changed_when: false
+
     - name: Clone or update blue-railroad-import source
       command: >
         docker exec -u root jenkins bash -c '
