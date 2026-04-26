@@ -140,9 +140,7 @@
 
     # `copy` doesn't delete files at dest that aren't in src, so removing a
     # .groovy from jobs/ leaves the old definition lingering. This task
-    # ensures retired .groovy files don't get re-loaded on restart. The
-    # Jenkins job records in Jenkins's own DB persist regardless and need
-    # one-time manual deletion from the UI.
+    # ensures retired .groovy files don't get re-loaded on restart.
     - name: Remove retired Jenkins job-DSL files
       file:
         path: "{{ jenkins_home }}/jobs/{{ item }}"
@@ -152,6 +150,23 @@
         - pickipedia-rsync-status.groovy
         - backup-pickipedia.groovy
         - backup-memory-lane.groovy
+      notify: Restart Jenkins container
+
+    # Jenkins persists job runtime state (config.xml, builds/) in
+    # $JENKINS_HOME/jobs/<name>/, and its own startup scan loads any
+    # directory found there — independently of JCasC. So removing a
+    # .groovy alone doesn't make the job disappear from the UI; the
+    # runtime dir has to go too. Lose the build history, but that was
+    # the goal: these jobs are retired.
+    - name: Remove retired Jenkins job runtime directories
+      file:
+        path: "{{ jenkins_home }}/jobs/{{ item }}"
+        state: absent
+      loop:
+        - arthel-rsync-status
+        - pickipedia-rsync-status
+        - backup-pickipedia
+        - backup-memory-lane
       notify: Restart Jenkins container
 
     - name: Check if log paths are directories (Docker creates dirs for missing mount sources)
