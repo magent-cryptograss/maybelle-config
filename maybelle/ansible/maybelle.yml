@@ -211,6 +211,7 @@
           - "/var/log/nfs-deploy.log:/var/log/nfs-deploy.log:ro"
           - "/var/log/pickipedia-backup.log:/var/log/pickipedia-backup.log:ro"
           - "/var/log/pickipedia-deploy.log:/var/log/pickipedia-deploy.log:ro"
+          - "/var/log/delivery-kid-audit.log:/var/log/delivery-kid-audit.log:ro"
           # Docker socket removed - Jenkins doesn't need it and it's a security risk
         etc_hosts:
           # Use Hetzner private network for faster/reliable inter-VPS communication
