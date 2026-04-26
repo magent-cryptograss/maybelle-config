@@ -432,10 +432,23 @@ def main():
         try:
             with open(chain_audit) as f:
                 script_body = f.read()
-            subprocess.run(
-                ["ssh", MAYBELLE_HOST, "docker exec -i jenkins python3 -"],
-                input=script_body, text=True, timeout=120,
-            )
+            # When running ON maybelle (host cron path), skip the SSH and
+            # docker exec straight in. Otherwise (laptop invocation) SSH to
+            # maybelle and pipe through. BatchMode keeps the cron path from
+            # ever blocking on an interactive password prompt if the SSH
+            # self-loopback is misconfigured.
+            import socket
+            on_maybelle = socket.gethostname().startswith("maybelle")
+            if on_maybelle:
+                cmd = ["docker", "exec", "-i", "jenkins", "python3", "-"]
+            else:
+                cmd = [
+                    "ssh", "-o", "BatchMode=yes",
+                    "-o", "ConnectTimeout=10",
+                    MAYBELLE_HOST,
+                    "docker exec -i jenkins python3 -",
+                ]
+            subprocess.run(cmd, input=script_body, text=True, timeout=120)
         except Exception as e:
             print(f"  (could not check chain data: {e})")
     else:
