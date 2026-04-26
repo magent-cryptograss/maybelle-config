@@ -356,7 +356,7 @@
         owner: root
         group: root
 
-    - name: Configure SSH for hunter and NFS
+    - name: Configure SSH for hunter, NFS, and delivery-kid
       copy:
         dest: "/root/.ssh/config"
         content: |
@@ -367,6 +367,14 @@
           Host ssh.nyc1.nearlyfreespeech.net
             IdentityFile ~/.ssh/id_ed25519_nfs
             User jmyles_justinholmescom
+
+          # delivery-kid reuses the hunter key (see delivery-kid/ansible/inventory.yml).
+          # Needed by the host cron `run-delivery-kid-audit.sh`, which calls
+          # audit-storage.py — that script SSHes to delivery-kid to list IPFS
+          # pins, seeding dirs, and staging drafts.
+          Host delivery-kid.cryptograss.live
+            IdentityFile ~/.ssh/id_ed25519_hunter
+            User root
         mode: '0600'
         owner: root
         group: root
@@ -374,6 +382,11 @@
     - name: Add hunter to known_hosts
       ansible.builtin.shell:
         cmd: "ssh-keyscan -H hunter.cryptograss.live >> /root/.ssh/known_hosts"
+
+    - name: Add delivery-kid to root known_hosts
+      ansible.builtin.shell:
+        cmd: "ssh-keyscan -H delivery-kid.cryptograss.live >> /root/.ssh/known_hosts"
+      changed_when: false
 
     - name: Ensure that known_hosts is present
       ansible.builtin.file:
@@ -551,9 +564,12 @@
         mode: '0600'
         owner: root
         group: root
+        # `quote` wraps in single quotes and escapes embedded single quotes,
+        # so passwords with $/`/"/* etc. survive `set -a; . /etc/...env; set +a`
+        # in the runner script.
         content: |
-          BLUERAILROAD_BOT_USERNAME={{ BLUERAILROAD_BOT_USERNAME }}
-          BLUERAILROAD_BOT_PASSWORD={{ BLUERAILROAD_BOT_PASSWORD }}
+          BLUERAILROAD_BOT_USERNAME={{ BLUERAILROAD_BOT_USERNAME | quote }}
+          BLUERAILROAD_BOT_PASSWORD={{ BLUERAILROAD_BOT_PASSWORD | quote }}
 
     - name: Create delivery-kid audit runner script
       copy:
