@@ -1,11 +1,19 @@
 #!/usr/bin/env python3
-"""Purge infrastructure (IPFS pin + seeding dir) for Release pages marked
-with ``delete: true`` or ``unpin: true`` in their YAML.
+"""Purge infrastructure for items the wiki has flagged for cleanup.
 
-Per-item interactive confirmation. Prints the matching YAML change needed
-on the wiki side (``pinned_on``) after each cleanup — this script
-deliberately does not edit wiki pages, to keep it runnable without an
-admin bot password.
+Two kinds of cleanup:
+
+1. Release pages marked ``delete: true`` or ``unpin: true`` —
+   unpin from the delivery-kid IPFS node and remove the seeding dir.
+
+2. ReleaseDraft pages marked ``abandoned: true`` (without
+   ``abandoned_keep_files: true``) — remove the staging dir on
+   delivery-kid. Drafts flagged with ``abandoned_keep_files: true``
+   are left alone; the user explicitly asked to keep the files.
+
+Per-item interactive confirmation. Wiki pages are not edited (so this
+script doesn't need an admin bot password); for Releases it prints the
+``pinned_on`` cleanup the user needs to do manually.
 
 Run after ``audit-storage.py`` surfaces "CLEANUP PENDING" entries.
 
@@ -28,6 +36,7 @@ DK_HOST = "root@delivery-kid.cryptograss.live"
 WIKI_API = "https://pickipedia.xyz/api.php"
 WIKI_BASE = "https://pickipedia.xyz/wiki"
 IPFS_EMPTY_DIR = "qmunllspaccz1vlxqvkxqqlx5r1x345qqfhbsf67hva3nn"
+NS_RELEASEDRAFT = 3006
 
 
 def ssh(host: str, cmd: str, check: bool = False) -> tuple[int, str, str]:
@@ -108,6 +117,47 @@ def unpin_ipfs(cid: str) -> bool:
     return False
 
 
+def fetch_release_draft_titles() -> list[str]:
+    """Return all ReleaseDraft page titles (just the id part after the colon)."""
+    titles = []
+    cont = None
+    while True:
+        params = {"action": "query", "list": "allpages",
+                  "apnamespace": str(NS_RELEASEDRAFT), "aplimit": "500"}
+        if cont:
+            params["apcontinue"] = cont
+        data = wiki_get(params)
+        for p in data.get("query", {}).get("allpages", []):
+            t = p["title"]
+            titles.append(t.split(":", 1)[1] if ":" in t else t)
+        cont = data.get("continue", {}).get("apcontinue")
+        if not cont:
+            break
+    return titles
+
+
+def fetch_staging_dirs() -> set[str]:
+    """Return the set of draft IDs that have a staging dir on delivery-kid."""
+    _, out, _ = ssh(DK_HOST, "ls /mnt/storage-box/staging/drafts/ 2>/dev/null")
+    return {line.strip() for line in out.splitlines() if line.strip()}
+
+
+def remove_staging_dir(draft_id: str) -> bool:
+    """Remove the staging dir for a draft. Case-insensitive match."""
+    rc, out, _ = ssh(DK_HOST,
+        f"ls /mnt/storage-box/staging/drafts/ 2>/dev/null | "
+        f"grep -i '^{draft_id}$' | head -1")
+    actual = out.strip()
+    if not actual:
+        return True  # already gone
+    rc, _, stderr = ssh(DK_HOST,
+        f"rm -rf /mnt/storage-box/staging/drafts/{actual}")
+    if rc != 0:
+        print(f"    rm failed: {stderr.strip()}")
+        return False
+    return True
+
+
 def remove_seeding_dir(cid: str) -> bool:
     """Remove the seeding directory for a CID. Case-insensitive match."""
     rc, out, _ = ssh(DK_HOST,
@@ -145,6 +195,26 @@ def _alive_flags(c: dict) -> list[str]:
 
 
 def _print_candidate(c: dict, terse: bool):
+    if c["kind"] == "draft":
+        if terse:
+            print(f"  {c['draft_id'][:16]}... [abandoned] {c['title']}")
+            print(f"    alive: staging dir")
+            return
+        print(f"  reason:     abandoned")
+        if c.get("removal_reason"):
+            print(f"  why:        {c['removal_reason']}")
+        print(f"  alive:      staging dir")
+        print(f"  page:       {c['url']}")
+        if c.get("creator"):
+            print(f"  created:    {c['created_at']} by {c['creator']}")
+        if c.get("last_editor"):
+            when = c.get("last_edited_at") or "?"
+            who = c.get("last_editor") or "?"
+            print(f"  last edit:  {when} by {who}")
+            if c.get("last_comment"):
+                print(f"    \"{c['last_comment']}\"")
+        return
+
     alive = _alive_flags(c)
     if terse:
         print(f"  {c['cid'][:16]}... [{c['reason']}] {c['title']}")
@@ -184,6 +254,14 @@ def main():
     seeding = [s.lower() for s in fetch_seeding_dirs()]
     print(f"{len(seeding)} dirs")
 
+    print("Fetching ReleaseDraft titles...", end=" ", flush=True)
+    draft_titles = fetch_release_draft_titles()
+    print(f"{len(draft_titles)} drafts")
+
+    print("Fetching staging dirs...", end=" ", flush=True)
+    staging = {s.lower() for s in fetch_staging_dirs()}
+    print(f"{len(staging)} dirs")
+
     # Per-release YAML scan is the slow part — each page_content is an HTTP
     # round trip. Show a dot per page fetched, `+` when we hit a candidate.
     print(f"Scanning {len(releases)} release pages for delete/unpin flags",
@@ -222,6 +300,7 @@ def main():
             if not isinstance(removal_reason, str):
                 removal_reason = None
             candidates.append({
+                "kind": "release",
                 "cid": cid, "title": title, "reason": reason,
                 "removal_reason": removal_reason,
                 "pinned": pinned, "seeded": seeded, "pinned_on": pinned_on,
@@ -233,11 +312,53 @@ def main():
             print("·", end="", flush=True)
     print()
 
+    print(f"Scanning {len(draft_titles)} ReleaseDraft pages for abandoned flag",
+          end=" ", flush=True)
+    for draft_title in draft_titles:
+        try:
+            ydata = yaml.safe_load(page_content(f"ReleaseDraft:{draft_title}")) or {}
+        except Exception:
+            ydata = {}
+        if not isinstance(ydata, dict):
+            ydata = {}
+
+        # Only abandoned, and only when the user didn't explicitly ask to keep
+        # the files. abandoned_keep_files: true → leave alone; the wiki YAML is
+        # the source of truth and the user has signaled "I want these around".
+        if not ydata.get("abandoned") or ydata.get("abandoned_keep_files"):
+            print(".", end="", flush=True)
+            continue
+
+        # The wiki page title is the draft_id (uppercased first letter from
+        # MediaWiki normalization), but the staging dir uses the raw uuid.
+        draft_id = ydata.get("draft_id") or draft_title
+        if draft_id.lower() not in staging:
+            # Already cleaned up — wiki YAML still says abandoned, but
+            # staging dir is gone. Nothing to do.
+            print("·", end="", flush=True)
+            continue
+
+        print("+", end="", flush=True)
+        hist = page_history(f"ReleaseDraft:{draft_title}")
+        abandoned_reason = ydata.get("abandoned_reason")
+        if not isinstance(abandoned_reason, str):
+            abandoned_reason = None
+        candidates.append({
+            "kind": "draft",
+            "draft_id": draft_id,
+            "title": f"ReleaseDraft:{draft_title}",
+            "removal_reason": abandoned_reason,
+            "url": f"{WIKI_BASE}/ReleaseDraft:{draft_title}",
+            **hist,
+        })
+    print()
+
     if not candidates:
-        print("Nothing to clean up — no deleted/retired releases have alive infrastructure.")
+        print("Nothing to clean up — no deleted/retired releases or "
+              "abandoned drafts have alive infrastructure.")
         return 0
 
-    print(f"\nFound {len(candidates)} release(s) with cleanup pending:\n")
+    print(f"\nFound {len(candidates)} item(s) with cleanup pending:\n")
     for c in candidates:
         _print_candidate(c, terse=True)
 
@@ -247,24 +368,34 @@ def main():
 
     print()
     for c in candidates:
-        cid = c["cid"]
-        print(f"--- {cid[:16]}... {c['title']} ---")
+        identifier = c["draft_id"] if c["kind"] == "draft" else c["cid"]
+        print(f"--- {identifier[:16]}... {c['title']} ---")
         _print_candidate(c, terse=False)
-        if not confirm(f"  Purge infrastructure for this release?"):
+
+        if c["kind"] == "draft":
+            if not confirm("  Remove staging dir for this draft?"):
+                print("  skipped.\n")
+                continue
+            print("  Removing staging dir...")
+            remove_staging_dir(c["draft_id"])
+            print()
+            continue
+
+        if not confirm("  Purge infrastructure for this release?"):
             print("  skipped.\n")
             continue
 
         if c["pinned"]:
-            print(f"  Unpinning from IPFS...")
-            unpin_ipfs(cid)
+            print("  Unpinning from IPFS...")
+            unpin_ipfs(c["cid"])
         if c["seeded"]:
-            print(f"  Removing seeding dir...")
-            remove_seeding_dir(cid)
+            print("  Removing seeding dir...")
+            remove_seeding_dir(c["cid"])
 
         if c["pinned_on"]:
             print(f"  NOTE: wiki YAML pinned_on is still {c['pinned_on']}.")
-            print(f"        Edit Release:{cid} and clear/remove 'pinned_on' so the "
-                  f"banner shows cleanly.")
+            print(f"        Edit Release:{c['cid']} and clear/remove 'pinned_on' "
+                  f"so the banner shows cleanly.")
         print()
 
     print("Done. Run audit-storage.py to verify.")

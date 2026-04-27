@@ -226,8 +226,11 @@ def audit_seeding(releases: list[dict], seeding: list[str],
     return {"orphan_seeds": orphan_seeds, "missing_seeds": missing_seeds}
 
 
-def fetch_abandoned_drafts(wiki_draft_ids: list[str]) -> dict[str, str]:
-    """Return {draft_id_lower: reason} for drafts flagged `abandoned: true`."""
+def fetch_abandoned_drafts(wiki_draft_ids: list[str]) -> dict[str, dict]:
+    """Return {draft_id_lower: {reason, keep_files}} for drafts flagged
+    `abandoned: true`. ``keep_files`` reflects ``abandoned_keep_files``,
+    which the user can set to signal that staging files are intentionally
+    being kept around (so the audit treats them as "kept", not pending)."""
     abandoned = {}
     for w in wiki_draft_ids:
         try:
@@ -236,14 +239,17 @@ def fetch_abandoned_drafts(wiki_draft_ids: list[str]) -> dict[str, str]:
         except Exception:
             continue
         if isinstance(data, dict) and data.get("abandoned"):
-            abandoned[w.lower()] = data.get("abandoned_reason") or ""
+            abandoned[w.lower()] = {
+                "reason": data.get("abandoned_reason") or "",
+                "keep_files": bool(data.get("abandoned_keep_files")),
+            }
     return abandoned
 
 
 def audit_drafts(
     wiki_draft_ids: list[str],
     staging_drafts: list[dict],
-    abandoned: dict[str, str],
+    abandoned: dict[str, dict],
 ) -> dict:
     staging_by_id = {d["id"].lower(): d for d in staging_drafts}
     wiki_lower = {w.lower(): w for w in wiki_draft_ids}
@@ -260,9 +266,11 @@ def audit_drafts(
             orphan_drafts.append(d)
             continue
         if lower in abandoned:
+            info = abandoned[lower]
             abandoned_drafts.append({
                 **d, "wiki_title": wiki_lower[lower],
-                "reason": abandoned[lower], "has_staging": True,
+                "reason": info["reason"], "has_staging": True,
+                "keep_files": info["keep_files"],
             })
         elif not d["has_draft_json"] and d["upload_files"] == 0:
             stalled_drafts.append({**d, "wiki_title": wiki_lower[lower]})
@@ -274,8 +282,10 @@ def audit_drafts(
         if lower in staging_by_id:
             continue
         if lower in abandoned and lower not in seen_abandoned_with_staging:
+            info = abandoned[lower]
             abandoned_drafts.append({
-                "wiki_title": w, "reason": abandoned[lower], "has_staging": False,
+                "wiki_title": w, "reason": info["reason"], "has_staging": False,
+                "keep_files": info["keep_files"],
             })
             continue
         # Check if ever finalized
@@ -377,7 +387,13 @@ def print_draft_audit(result: dict, wiki_count: int, staging_count: int):
     if result["abandoned_drafts"]:
         print(f"  ABANDONED DRAFTS ({len(result['abandoned_drafts'])}) — flagged `abandoned: true`:")
         for a in result["abandoned_drafts"]:
-            state = "CLEANUP PENDING: staging dir" if a["has_staging"] else "clean"
+            if not a["has_staging"]:
+                state = "clean"
+            elif a.get("keep_files"):
+                # User explicitly asked to keep the files; not pending.
+                state = "files kept"
+            else:
+                state = "CLEANUP PENDING: staging dir"
             reason = f" — {a['reason']}" if a["reason"] else ""
             print(f"    {a['wiki_title'][:36]} [{state}]{reason}")
     if result["finalized_gone"]:
@@ -489,7 +505,11 @@ def main():
         1 for r in pin_result["deleted"] + pin_result["retired"]
         if _alive_flags(r)
     )
-    cleanup_pending += sum(1 for a in draft_result["abandoned_drafts"] if a["has_staging"])
+    # abandoned_keep_files=true is "intentionally kept" — not pending cleanup.
+    cleanup_pending += sum(
+        1 for a in draft_result["abandoned_drafts"]
+        if a["has_staging"] and not a.get("keep_files")
+    )
     print(f"  Cleanup pending:     {cleanup_pending} "
           f"(deleted/retired releases + abandoned drafts with alive infra)")
 
