@@ -426,6 +426,10 @@ def main():
     print_draft_audit(draft_result, draft_count, staging_count)
 
     print_section("Blue Railroad Chain Data vs Releases")
+    # Flush our own stdout buffer before launching a subprocess that writes
+    # to the same pipe — otherwise, when stdout is captured (not a TTY),
+    # the child's output appears *before* our buffered prints in the output.
+    sys.stdout.flush()
     script_dir = Path(__file__).parent
     chain_audit = script_dir / "audit-chain-data.py"
     if chain_audit.exists():
