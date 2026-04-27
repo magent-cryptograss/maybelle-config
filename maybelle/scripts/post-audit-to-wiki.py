@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Run audit-storage.py; post a wiki page only if problems are detected.
+"""Run audit-storage.py; post results to PickiPedia.
 
-Captures audit stdout, looks for non-zero counts in the audit summary, and
-creates a wiki page at ``Cryptograss:delivery-kid-audits/<blockheight>``
-via the Blue Railroad Imports bot when problems are found. When the audit
-is clean, no page is created — the wiki only accumulates real signals.
+Two output channels:
+
+1. ``Cryptograss:delivery-kid-audits/Latest`` — overwritten every run as a
+   bot edit (filtered out of recent changes by default), so anyone curious
+   about the most recent audit has a stable URL to check.
+
+2. ``Cryptograss:delivery-kid-audits/<blockheight>`` — created only when
+   problems are detected. These accumulate over time and DO show in
+   recent changes, so they act as the "something needs attention" signal.
 
 Required env vars:
   BLUERAILROAD_BOT_USERNAME
@@ -29,6 +34,8 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 AUDIT_SCRIPT = SCRIPT_DIR / "audit-storage.py"
 WIKI_URL = os.environ.get("WIKI_URL", "https://pickipedia.xyz")
 AUDIT_TIMEOUT = int(os.environ.get("AUDIT_TIMEOUT_SECS", "600"))
+
+LATEST_PAGE_TITLE = "Cryptograss:Delivery-kid-audits/Latest"
 
 # Ethereum merge constants — matches the formula used by the Special:Deliver* pages.
 MERGE_BLOCK = 15537394
@@ -118,42 +125,95 @@ def to_indented_pre(text: str) -> str:
     )
 
 
-def post_to_wiki(
+def _status_banner(problems: dict[str, int]) -> str:
+    """Build a colored callout summarizing whether action is required.
+
+    Drawn at the top of every audit page so the action items (or the
+    all-clear) are the first thing a reader sees.
+    """
+    if problems:
+        items = "\n".join(
+            f"* '''{label}''': {count}" for label, count in problems.items()
+        )
+        return (
+            '<div style="background:#fef6e7; border:2px solid #ac6600; '
+            'padding:0.75em 1em; margin:1em 0; border-radius:4px;">\n'
+            "'''⚠ Action required'''\n\n"
+            f"{items}\n"
+            "</div>\n"
+        )
+    return (
+        '<div style="background:#d5fdf4; border:2px solid #14866d; '
+        'padding:0.75em 1em; margin:1em 0; border-radius:4px;">\n'
+        "'''✓ All clear''' — no problems detected.\n"
+        "</div>\n"
+    )
+
+
+def _build_page_content(
     blockheight: int,
     audit_text: str,
     returncode: int,
     problems: dict[str, int],
 ) -> str:
-    user = os.environ["BLUERAILROAD_BOT_USERNAME"]
-    password = os.environ["BLUERAILROAD_BOT_PASSWORD"]
-
-    host = WIKI_URL.replace("https://", "").replace("http://", "").rstrip("/")
-    site = mwclient.Site(host, scheme="https", path="/")
-    site.login(user, password)
-
-    title = f"Cryptograss:delivery-kid-audits/{blockheight}"
     status_label = "OK" if returncode == 0 else f"audit script exited {returncode}"
     timestamp = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
-
-    problem_summary = "\n".join(
-        f"* '''{label}''': {count}" for label, count in problems.items()
-    )
-
-    content = (
+    return (
         f"Audit at Ethereum block "
         f"[https://etherscan.io/block/{blockheight} {blockheight}] "
         f"({timestamp}) — {status_label}.\n\n"
-        "==Problems detected==\n"
-        f"{problem_summary}\n\n"
+        f"{_status_banner(problems)}\n"
         "==Full audit output==\n"
         f"{to_indented_pre(linkify_audit(audit_text))}\n\n"
         "[[Category:Delivery Kid Audits]]\n"
     )
 
+
+def _login() -> mwclient.Site:
+    user = os.environ["BLUERAILROAD_BOT_USERNAME"]
+    password = os.environ["BLUERAILROAD_BOT_PASSWORD"]
+    host = WIKI_URL.replace("https://", "").replace("http://", "").rstrip("/")
+    site = mwclient.Site(host, scheme="https", path="/")
+    site.login(user, password)
+    return site
+
+
+def post_problem_page(
+    site: mwclient.Site,
+    blockheight: int,
+    audit_text: str,
+    returncode: int,
+    problems: dict[str, int],
+) -> str:
+    """Create the per-blockheight problem page (visible in recent changes)."""
+    title = f"Cryptograss:Delivery-kid-audits/{blockheight}"
     short = ", ".join(f"{label} {count}" for label, count in problems.items())
-    page = site.pages[title]
-    page.save(content, summary=f"Audit at block {blockheight}: {short}")
+    site.pages[title].save(
+        _build_page_content(blockheight, audit_text, returncode, problems),
+        summary=f"Audit at block {blockheight}: {short}",
+        bot=False,
+    )
     return title
+
+
+def post_latest_page(
+    site: mwclient.Site,
+    blockheight: int,
+    audit_text: str,
+    returncode: int,
+    problems: dict[str, int],
+) -> str:
+    """Update the always-fresh Latest page (bot edit, hidden from RC by default)."""
+    short = (
+        ", ".join(f"{label} {count}" for label, count in problems.items())
+        if problems else "clean"
+    )
+    site.pages[LATEST_PAGE_TITLE].save(
+        _build_page_content(blockheight, audit_text, returncode, problems),
+        summary=f"Audit at block {blockheight}: {short}",
+        bot=True,
+    )
+    return LATEST_PAGE_TITLE
 
 
 def main():
@@ -165,13 +225,21 @@ def main():
     print(audit_text)
 
     problems = detect_problems(audit_text)
+    site = _login()
+
+    # Always update Latest so there's a stable place to see the most recent
+    # run. Marked as bot edit → filtered from recent changes by default.
+    post_latest_page(site, blockheight, audit_text, rc, problems)
+    print(f"Latest updated: {WIKI_URL}/wiki/{LATEST_PAGE_TITLE.replace(' ', '_')}")
+
     if not problems:
-        print(f"\nNo problems detected at block {blockheight}; nothing posted.")
+        print(f"\nNo problems detected at block {blockheight}; "
+              "no per-block page posted.")
         sys.exit(0)
 
     summary_inline = ", ".join(f"{k}={v}" for k, v in problems.items())
-    print(f"\nProblems detected ({summary_inline}); posting...")
-    title = post_to_wiki(blockheight, audit_text, rc, problems)
+    print(f"\nProblems detected ({summary_inline}); posting per-block page...")
+    title = post_problem_page(site, blockheight, audit_text, rc, problems)
     print(f"Posted to: {WIKI_URL}/wiki/{title.replace(' ', '_')}")
     sys.exit(0)
 
