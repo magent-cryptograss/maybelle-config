@@ -96,6 +96,16 @@
   retries: 15
   delay: 2
 
+# Idempotent — applies any pending DB schema changes left over after a
+# MediaWiki version bump. Skipping this is what caused issue #20 (missing
+# cl_collation column breaking categorylinks-driven queries like
+# Special:VerifyBotEdits).
+- name: Run MediaWiki maintenance/update.php
+  command:
+    cmd: docker exec pickipedia-wiki php /var/www/html/maintenance/update.php --quick
+  register: mw_update
+  changed_when: "'...done.' in mw_update.stdout or 'Updating' in mw_update.stdout"
+
 - name: Rebuild Semantic MediaWiki data
   command:
     cmd: docker exec pickipedia-wiki php /var/www/html/maintenance/run.php SMW\Maintenance\RebuildData
