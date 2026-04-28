@@ -43,6 +43,12 @@ class ContentDraftState(BaseModel):
     preview_job_id: Optional[str] = Field(default=None, description="Coconut job ID for preview transcode")
     preview_cid: Optional[str] = Field(default=None, description="IPFS CID of AV1 HLS output")
     preview_mp4_cid: Optional[str] = Field(default=None, description="IPFS CID of 480p H.264 preview MP4")
+    # Progress trail captured from Coconut webhook events. Surfaced to the
+    # draft page by /draft-content so the user can see what's happening
+    # during transcoding instead of staring at "Preview is being transcoded..."
+    # for minutes. Capped at PREVIEW_LOG_MAX entries to keep draft.json small.
+    preview_log: list[dict] = Field(default_factory=list,
+                                    description="Recent progress entries: [{ts, message, progress?}]")
 
 
 class ContentDraftResponse(BaseModel):
@@ -55,6 +61,7 @@ class ContentDraftResponse(BaseModel):
     preview_status: str = Field(default="none", description="none, pending, processing, ready, failed")
     preview_cid: Optional[str] = Field(default=None, description="IPFS CID of AV1 HLS output")
     preview_mp4_cid: Optional[str] = Field(default=None, description="IPFS CID of 480p preview MP4")
+    preview_log: list[dict] = Field(default_factory=list, description="Recent progress entries from Coconut webhook")
 
 
 class ContentFinalizeRequest(BaseModel):

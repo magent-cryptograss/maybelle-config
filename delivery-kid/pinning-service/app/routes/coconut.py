@@ -32,6 +32,40 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["coconut"])
 
 
+PREVIEW_LOG_MAX = 50
+
+
+def _append_preview_log(staging_dir: Path, draft_id: str, message: str,
+                        progress: int | None = None,
+                        status: str | None = None) -> None:
+    """Append a single progress entry to a draft's preview_log.
+
+    ``status`` (when non-None) updates ``preview_status`` in the same write —
+    saves a separate disk hit. The log is capped at PREVIEW_LOG_MAX entries.
+    """
+    draft_json = staging_dir / "drafts" / draft_id / "draft.json"
+    if not draft_json.exists():
+        return
+    try:
+        data = json.loads(draft_json.read_text())
+        log = data.get("preview_log") or []
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "message": message,
+        }
+        if progress is not None:
+            entry["progress"] = progress
+        log.append(entry)
+        # Keep only the most recent N — drafts can in theory accumulate many
+        # progress events across retries and we don't want draft.json to bloat.
+        data["preview_log"] = log[-PREVIEW_LOG_MAX:]
+        if status is not None:
+            data["preview_status"] = status
+        draft_json.write_text(json.dumps(data, indent=2, default=str))
+    except Exception as e:
+        logger.error("[%s] Failed to append preview log: %s", draft_id[:8], e)
+
+
 def _update_draft_preview(staging_dir: Path, job: dict) -> None:
     """Update a content draft's preview state after Coconut webhook."""
     draft_id = job["draftId"]
@@ -41,17 +75,29 @@ def _update_draft_preview(staging_dir: Path, job: dict) -> None:
         return
     try:
         data = json.loads(draft_json.read_text())
+        log = data.get("preview_log") or []
         if job["status"] == "complete" and job.get("hlsCid"):
             data["preview_status"] = "ready"
             data["preview_cid"] = job["hlsCid"]
             # previewCid = 480p MP4 for the video player on the ReleaseDraft page
             if job.get("previewCid"):
                 data["preview_mp4_cid"] = job["previewCid"]
+            log.append({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "message": f"Transcode complete · HLS pinned ({job['hlsCid'][:12]}…)",
+                "progress": 100,
+            })
             logger.info("[%s] Draft %s preview ready: hls=%s mp4=%s",
                         job["id"], draft_id[:8], job["hlsCid"], job.get("previewCid", "none"))
         else:
             data["preview_status"] = "failed"
+            err = job.get("error") or "Unknown error"
+            log.append({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "message": f"Preview transcode failed: {err}",
+            })
             logger.warning("[%s] Draft %s preview failed", job["id"], draft_id[:8])
+        data["preview_log"] = log[-PREVIEW_LOG_MAX:]
         draft_json.write_text(json.dumps(data, indent=2, default=str))
     except Exception as e:
         logger.error("[%s] Failed to update draft preview state: %s", job["id"], e)
@@ -173,6 +219,31 @@ async def webhook_coconut(request: Request, settings: Settings = Depends(get_set
     event = await request.json()
     event_type = event.get("event", "unknown")
     logger.info("[%s] Coconut webhook: %s", job_id, event_type)
+
+    # Capture progress/lifecycle events into the draft's preview_log so the
+    # ReleaseDraft page can show what's happening during transcoding. Only
+    # for preview jobs — finalize uses its own SSE stream.
+    if job.get("isPreview") and job.get("draftId"):
+        draft_id = job["draftId"]
+        staging_dir_path = Path(settings.staging_dir)
+        if event_type == "job.progress":
+            progress = event.get("progress")
+            stage = event.get("stage") or event.get("status") or "transcoding"
+            msg = f"{stage}"
+            if progress is not None:
+                msg += f" · {progress}%"
+            _append_preview_log(staging_dir_path, draft_id, msg,
+                                progress=progress, status="processing")
+        elif event_type in ("output.completed", "output.transferred"):
+            output = event.get("output") or {}
+            label = output.get("key") or output.get("format") or "output"
+            _append_preview_log(staging_dir_path, draft_id,
+                                f"output ready: {label}")
+        elif event_type == "output.failed":
+            output = event.get("output") or {}
+            label = output.get("key") or output.get("format") or "output"
+            _append_preview_log(staging_dir_path, draft_id,
+                                f"output failed: {label}")
 
     try:
         if event_type == "job.completed":

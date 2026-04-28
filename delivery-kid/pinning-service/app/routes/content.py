@@ -225,6 +225,7 @@ async def get_content_draft(
         preview_status=state.preview_status,
         preview_cid=state.preview_cid,
         preview_mp4_cid=state.preview_mp4_cid,
+        preview_log=state.preview_log,
     )
 
 
@@ -304,15 +305,24 @@ async def _submit_preview_transcode(
         }
         save_job(staging_dir, job_id, job_state)
 
-        # Update draft state
+        # Update draft state — and seed the preview log so the page has
+        # something to show before the first webhook event arrives.
         state.preview_status = "processing"
         state.preview_job_id = job_id
+        state.preview_log.append({
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "message": f"Submitted to Coconut (job {coconut_job_id})",
+        })
         save_draft_state(draft_dir, state)
 
     except Exception as e:
         logger.error("[preview:%s] Failed to submit preview: %s", draft_id[:8], e)
         try:
             state.preview_status = "failed"
+            state.preview_log.append({
+                "ts": datetime.now(timezone.utc).isoformat(),
+                "message": f"Failed to submit to Coconut: {e}",
+            })
             save_draft_state(draft_dir, state)
         except Exception:
             pass
