@@ -57,6 +57,82 @@ def save_draft_state(draft_dir: Path, state: ContentDraftState) -> None:
         json.dump(state.model_dump(mode="json"), f, indent=2, default=str)
 
 
+# Caps on per-draft log lengths (keep draft.json small).
+UPLOAD_LOG_MAX = 100
+FINALIZE_LOG_MAX = 200
+
+
+def _append_upload_log(state: ContentDraftState, phase: str, message: str,
+                       error: str | None = None) -> None:
+    """Append an entry to state.upload_log in place. Caller is responsible for save_draft_state."""
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "phase": phase,
+        "message": message,
+    }
+    if error:
+        entry["error"] = error
+    state.upload_log.append(entry)
+    if len(state.upload_log) > UPLOAD_LOG_MAX:
+        state.upload_log = state.upload_log[-UPLOAD_LOG_MAX:]
+
+
+def _append_finalize_log(state: ContentDraftState, stage: str, message: str,
+                         progress: int | None = None, error: str | None = None) -> None:
+    """Append an entry to state.finalize_log in place."""
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "stage": stage,
+        "message": message,
+    }
+    if progress is not None:
+        entry["progress"] = progress
+    if error:
+        entry["error"] = error
+    state.finalize_log.append(entry)
+    if len(state.finalize_log) > FINALIZE_LOG_MAX:
+        state.finalize_log = state.finalize_log[-FINALIZE_LOG_MAX:]
+
+
+@router.post("/init", response_model=ContentDraftResponse)
+async def init_content_draft(
+    wallet_address: str = Depends(require_auth),
+    settings: Settings = Depends(get_settings)
+):
+    """
+    Mint a new draft_id with no files yet, and seed draft.json.
+
+    Lets the client create the wiki ReleaseDraft page BEFORE posting bytes,
+    so that an upload that subsequently fails leaves an inspectable record
+    (the wiki page + draft.json with upload_log entries) instead of vanishing.
+    """
+    staging_dir = Path(settings.staging_dir)
+    draft_id = str(uuid.uuid4())
+    draft_dir = get_draft_dir(staging_dir, draft_id)
+    (draft_dir / "upload").mkdir(parents=True, exist_ok=True)
+
+    now = datetime.now(timezone.utc)
+    state = ContentDraftState(
+        draft_id=draft_id,
+        draft_type="content",
+        created_at=now,
+        uploaded_by=wallet_address,
+        files=[],
+        status="awaiting_upload",
+    )
+    _append_upload_log(state, "init", "Draft initialised; awaiting upload.")
+    save_draft_state(draft_dir, state)
+
+    return ContentDraftResponse(
+        draft_id=draft_id,
+        files=[],
+        commit=get_commit(),
+        status=state.status,
+        upload_log=state.upload_log,
+        preview_status=state.preview_status,
+    )
+
+
 @router.post("", response_model=ContentDraftResponse)
 async def create_content_draft(
     files: list[UploadFile] = File(...),
@@ -74,30 +150,19 @@ async def create_content_draft(
     into a stalled/existing draft). The existing directory is wiped
     first. Ownership is enforced when a prior draft state exists.
     """
-    if not files:
-        raise HTTPException(status_code=400, detail="No files provided")
-
-    # Validate file types
-    for file in files:
-        ext = Path(file.filename).suffix.lower()
-        if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid file type: {file.filename}. Allowed extensions: {sorted(ALLOWED_EXTENSIONS)}"
-            )
-
-    # Check total size
-    max_size = settings.max_file_size_mb * 1024 * 1024
-    total_size = sum(file.size or 0 for file in files)
-    if total_size > max_size:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Total upload size exceeds {settings.max_file_size_mb}MB limit"
-        )
-
     staging_dir = Path(settings.staging_dir)
 
-    # Resolve draft_id — reuse if X-Draft-Id provided, else fresh uuid.
+    # Resolve draft_id and existing state.
+    #
+    # Three call shapes are supported:
+    #   (a) X-Draft-Id matches a stub from /init (status=awaiting_upload, no files):
+    #       continue into it, preserving upload_log.
+    #   (b) X-Draft-Id matches a fully-populated draft (re-upload after a prior
+    #       success or after upload_failed): wipe upload/ contents, append a
+    #       "re-upload started" log entry, keep the rest of state.
+    #   (c) No X-Draft-Id (legacy clients that haven't been flipped to /init):
+    #       mint a fresh draft_id with no log seed.
+    prior: ContentDraftState | None = None
     if x_draft_id:
         try:
             uuid.UUID(x_draft_id)
@@ -109,13 +174,73 @@ async def create_content_draft(
             prior = load_draft_state(existing)
             if prior is not None and prior.uploaded_by.lower() != wallet_address.lower():
                 raise HTTPException(status_code=403, detail="You do not own this draft")
-            safe_rmtree(existing)
+            # Clear any prior upload bytes; we keep the draft.json (and its
+            # logs) so the trail of attempts is visible.
+            upload_dir = existing / "upload"
+            if upload_dir.exists():
+                safe_rmtree(upload_dir)
     else:
         draft_id = str(uuid.uuid4())
 
     draft_dir = get_draft_dir(staging_dir, draft_id)
     upload_dir = draft_dir / "upload"
     upload_dir.mkdir(parents=True, exist_ok=True)
+
+    # Build (or refresh) the state object. We persist incrementally so any
+    # exception below leaves a draft.json that explains what went wrong.
+    now = datetime.now(timezone.utc)
+    if prior is not None:
+        state = prior
+        if prior.status == "awaiting_upload":
+            _append_upload_log(state, "upload-start",
+                               f"Receiving {len(files) if files else 0} file(s)...")
+        else:
+            _append_upload_log(state, "reupload-start",
+                               f"Re-upload started ({len(files) if files else 0} file(s)).")
+    else:
+        state = ContentDraftState(
+            draft_id=draft_id,
+            draft_type="content",
+            created_at=now,
+            uploaded_by=wallet_address,
+            files=[],
+        )
+        _append_upload_log(state, "upload-start",
+                           f"Receiving {len(files) if files else 0} file(s) (no /init).")
+
+    state.status = "uploading"
+    save_draft_state(draft_dir, state)
+
+    def fail(http_status: int, message: str) -> HTTPException:
+        """Record an upload-stage failure into upload_log and return an HTTPException."""
+        state.status = "upload_failed"
+        _append_upload_log(state, "error", message, error=message)
+        try:
+            save_draft_state(draft_dir, state)
+        except Exception:
+            logger.exception("[content:%s] Failed to persist upload_log on error", draft_id[:8])
+        return HTTPException(status_code=http_status, detail=message)
+
+    if not files:
+        raise fail(400, "No files provided")
+
+    # Validate file types
+    for file in files:
+        ext = Path(file.filename).suffix.lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise fail(
+                400,
+                f"Invalid file type: {file.filename}. Allowed extensions: {sorted(ALLOWED_EXTENSIONS)}"
+            )
+
+    # Check total size
+    max_size = settings.max_file_size_mb * 1024 * 1024
+    total_size = sum(file.size or 0 for file in files)
+    if total_size > max_size:
+        raise fail(
+            400,
+            f"Total upload size exceeds {settings.max_file_size_mb}MB limit"
+        )
 
     try:
         # Save uploaded files
@@ -124,6 +249,9 @@ async def create_content_draft(
             with open(file_path, "wb") as f:
                 content = await file.read()
                 f.write(content)
+            _append_upload_log(state, "received",
+                               f"Saved {file.filename} ({file_path.stat().st_size} bytes)")
+        save_draft_state(draft_dir, state)
 
         # Analyze all media files
         analyses = await analyze.analyze_media_directory(upload_dir)
@@ -148,29 +276,24 @@ async def create_content_draft(
                     size_bytes=a.size_bytes,
                     creation_time=a.creation_time,
                 ))
+            else:
+                _append_upload_log(state, "analyze-error",
+                                   f"ffprobe failed on {a.original_filename}",
+                                   error=a.error or "unknown")
 
         if not draft_files:
-            safe_rmtree(draft_dir)
-            raise HTTPException(
-                status_code=400,
-                detail="No valid media files found in upload"
-            )
-
-        # Create and save draft state
-        now = datetime.now(timezone.utc)
+            raise fail(400, "No valid media files found in upload")
 
         # Determine if this is a single-video upload that should get a preview
         video_files = [f for f in draft_files if f.media_type == "video"]
         should_preview = len(draft_files) == 1 and len(video_files) == 1 and settings.coconut_api_key
 
-        state = ContentDraftState(
-            draft_id=draft_id,
-            draft_type="content",
-            created_at=now,
-            uploaded_by=wallet_address,
-            files=draft_files,
-            preview_status="pending" if should_preview else "none",
-        )
+        state.files = draft_files
+        state.status = "uploaded"
+        state.preview_status = "pending" if should_preview else "none"
+        _append_upload_log(state, "analyzed",
+                           f"Analyzed {len(draft_files)} file(s); "
+                           + ("preview pending." if should_preview else "no preview."))
         save_draft_state(draft_dir, state)
 
         # Kick off background preview transcoding for video uploads
@@ -183,15 +306,17 @@ async def create_content_draft(
             draft_id=draft_id,
             files=draft_files,
             commit=get_commit(),
+            status=state.status,
+            upload_log=state.upload_log,
             preview_status=state.preview_status,
         )
 
     except HTTPException:
         raise
     except Exception as e:
-        if draft_dir.exists():
-            safe_rmtree(draft_dir)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Persistent record: keep draft_dir, log the failure, and surface it.
+        logger.exception("[content:%s] Upload failed", draft_id[:8])
+        raise fail(500, f"Upload error: {e}")
 
 
 @router.get("/{draft_id}", response_model=ContentDraftResponse)
@@ -222,6 +347,9 @@ async def get_content_draft(
         files=state.files,
         metadata=state.metadata,
         commit=get_commit(),
+        status=state.status,
+        upload_log=state.upload_log,
+        finalize_log=state.finalize_log,
         preview_status=state.preview_status,
         preview_cid=state.preview_cid,
         preview_mp4_cid=state.preview_mp4_cid,
@@ -366,13 +494,40 @@ async def finalize_sse_generator(
 
     Slow path (trim requested or no preview): Coconut cloud transcoding first,
     local ffmpeg fallback. Coconut fetches source from staging via preview_token.
+
+    Every SSE frame is mirrored into ``state.finalize_log`` and persisted, so
+    that after the SSE connection closes (or if the user reloads the page),
+    the ReleaseDraft page can show exactly which transcoding path ran and
+    where it ended up. On success the draft dir is deleted; on failure it is
+    kept for forensics.
     """
     async def send_event(event: str, data: dict):
+        # Mirror to persistent log before yielding the SSE frame.
+        msg = data.get("message") or ""
+        is_error = event == "error"
+        _append_finalize_log(
+            state,
+            stage=data.get("stage") or event,
+            message=msg,
+            progress=data.get("progress"),
+            error=msg if is_error else None,
+        )
+        try:
+            save_draft_state(draft_dir, state)
+        except Exception:
+            logger.exception("[content:%s] Failed to persist finalize_log entry", draft_id[:8])
         return {"event": event, "data": json.dumps(data)}
 
     has_trim = request.trim_start_seconds is not None or request.trim_end_seconds is not None
+    pin_success = False  # set True on the success paths so finally{} can rmtree
 
     try:
+        state.status = "finalizing"
+        try:
+            save_draft_state(draft_dir, state)
+        except Exception:
+            logger.exception("[content:%s] Failed to persist finalizing status", draft_id[:8])
+
         upload_dir = draft_dir / "upload"
         output_dir = draft_dir / "output"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -407,6 +562,7 @@ async def finalize_sse_generator(
 
             gateway_url = f"{settings.ipfs_gateway_url}/ipfs/{state.preview_cid}"
 
+            state.status = "finalized"
             yield await send_event("complete", {
                 "cid": state.preview_cid,
                 "gateway_url": gateway_url,
@@ -414,6 +570,7 @@ async def finalize_sse_generator(
                 "file_type": request.file_type,
                 "subsequent_to": request.subsequent_to,
             })
+            pin_success = True
             return
 
         # === Coconut cloud transcoding (with trim, or no preview available) ===
@@ -470,6 +627,9 @@ async def finalize_sse_generator(
                 # Don't delete draft dir yet — source file still needed if Coconut
                 # hasn't fetched it. Draft TTL cleanup handles it.
 
+                # Coconut path: pinning happens later in the webhook handler.
+                # We don't rmtree here — source is still needed if Coconut hasn't
+                # fetched it. Status stays "finalizing" until the webhook resolves.
                 yield await send_event("transcoding-submitted", {
                     "jobId": job_id,
                     "coconutJobId": coconut_job_id,
@@ -511,7 +671,9 @@ async def finalize_sse_generator(
             )
 
             if not result.success:
+                state.status = "finalize_failed"
                 yield await send_event("error", {
+                    "stage": "transcode",
                     "message": f"HLS transcode failed: {result.error}"
                 })
                 return
@@ -567,7 +729,9 @@ async def finalize_sse_generator(
         result = await ipfs.add_directory(pin_path)
 
         if not result.success:
+            state.status = "finalize_failed"
             yield await send_event("error", {
+                "stage": "ipfs",
                 "message": f"IPFS pinning failed: {result.error}"
             })
             return
@@ -580,6 +744,7 @@ async def finalize_sse_generator(
 
         gateway_url = f"{settings.ipfs_gateway_url}/ipfs/{result.cid}"
 
+        state.status = "finalized"
         yield await send_event("complete", {
             "cid": result.cid,
             "gateway_url": gateway_url,
@@ -588,16 +753,32 @@ async def finalize_sse_generator(
             "file_type": request.file_type,
             "subsequent_to": request.subsequent_to,
         })
+        pin_success = True
 
     except Exception as e:
-        yield await send_event("error", {"message": str(e)})
+        logger.exception("[content:%s] Finalize failed", draft_id[:8])
+        state.status = "finalize_failed"
+        yield await send_event("error", {"stage": "exception", "message": str(e)})
 
     finally:
-        try:
-            if draft_dir.exists():
-                safe_rmtree(draft_dir)
-        except Exception:
-            pass
+        # Only wipe the draft dir on a fully successful pin. On failure we
+        # keep draft.json (with its finalize_log) so the ReleaseDraft page
+        # can show what went wrong, and the source bytes stay on disk for
+        # ffprobe / re-attempt.
+        if pin_success:
+            try:
+                if draft_dir.exists():
+                    safe_rmtree(draft_dir)
+            except Exception:
+                logger.exception("[content:%s] Failed to clean up draft dir", draft_id[:8])
+        else:
+            # Persist the final status (e.g. finalize_failed) so the page poll
+            # picks it up after the SSE connection closes.
+            try:
+                if draft_dir.exists():
+                    save_draft_state(draft_dir, state)
+            except Exception:
+                logger.exception("[content:%s] Failed to persist final state", draft_id[:8])
 
 
 @router.post("/{draft_id}/finalize")
