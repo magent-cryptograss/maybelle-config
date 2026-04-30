@@ -167,6 +167,40 @@ async def pin_cid(cid: str) -> PinResult:
         return PinResult(success=False, error=str(e))
 
 
+async def list_directory(cid: str) -> list[dict]:
+    """
+    List the immediate children of a directory CID.
+
+    Returns a list of {name, cid, size, type} dicts. Type matches Kubo's
+    UnixFS encoding: 1=Directory, 2=File. Empty list on any failure.
+    """
+    settings = get_settings()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{settings.ipfs_api_url}/api/v0/ls",
+                params={"arg": cid},
+            )
+            if response.status_code != 200:
+                return []
+            import json
+            data = json.loads(response.text)
+            objects = data.get("Objects") or []
+            if not objects:
+                return []
+            entries = []
+            for link in objects[0].get("Links", []) or []:
+                entries.append({
+                    "name": link.get("Name", ""),
+                    "cid": link.get("Hash", ""),
+                    "size": link.get("Size", 0),
+                    "type": link.get("Type", 0),
+                })
+            return entries
+    except Exception:
+        return []
+
+
 async def get_local_pins() -> list[str]:
     """Get list of all locally pinned CIDs."""
     settings = get_settings()
