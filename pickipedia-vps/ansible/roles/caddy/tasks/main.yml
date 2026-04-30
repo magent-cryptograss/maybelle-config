@@ -41,7 +41,19 @@
     content: |
       # PickiPedia - SSL termination and reverse proxy
       {{ domain_name }}, {{ www_domain }} {
-          reverse_proxy 127.0.0.1:8080
+          # Static files for the Rabbithole shell. Served same-origin
+          # with the wiki so the iframe right pane (loading
+          # /wiki/Release:.../Metadata) shares cookies and can call
+          # mw.Api directly.
+          handle_path /rabbithole/* {
+              root * /var/www/rabbithole
+              try_files {path} {path}/ /shell.html
+              file_server
+          }
+
+          handle {
+              reverse_proxy 127.0.0.1:8080
+          }
 
           # Security headers
           header {

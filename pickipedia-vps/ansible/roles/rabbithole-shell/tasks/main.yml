@@ -1,0 +1,22 @@
+---
+# Rabbithole shell — static files for the right-pane editor experience.
+# Served by Caddy at https://pickipedia.xyz/rabbithole/, same-origin
+# with the wiki so the iframe inside the shell can use the user's
+# pickipedia session (mw.Api save) without CORS or X-Frame-Options
+# friction.
+
+- name: Create rabbithole web root
+  file:
+    path: /var/www/rabbithole
+    state: directory
+    owner: caddy
+    group: caddy
+    mode: '0755'
+
+- name: Clone or update rabbithole source
+  git:
+    repo: https://github.com/cryptograss/rabbithole.git
+    dest: /var/www/rabbithole
+    version: main
+    force: yes
+  become_user: caddy

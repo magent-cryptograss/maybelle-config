@@ -65,8 +65,9 @@
 
   roles:
     - mariadb
-    - docker-wiki  # Apache+PHP in Docker (replaces nginx + php-fpm)
-    - caddy         # SSL termination, reverse proxy to container on :8080
+    - docker-wiki        # Apache+PHP in Docker (replaces nginx + php-fpm)
+    - caddy              # SSL termination, reverse proxy to container on :8080
+    - rabbithole-shell   # Static files served at /rabbithole/ same-origin with wiki
     - mediawiki
 
   post_tasks:
