@@ -369,6 +369,7 @@
                   reverse_proxy /version localhost:3001
                   reverse_proxy /time localhost:3001
                   reverse_proxy /local-pins localhost:3001
+                  reverse_proxy /album-tracks/* localhost:3001
                   reverse_proxy /pin* localhost:3001
                   reverse_proxy /transcode* localhost:3001
                   reverse_proxy /job* localhost:3001
