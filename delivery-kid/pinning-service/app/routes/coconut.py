@@ -26,6 +26,7 @@ from ..services.coconut import (
     list_jobs,
     process_completed_job,
 )
+from ..services.pickipedia_client import snapshot_diagnostics_for_dict_async
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,15 @@ def _update_draft_preview(staging_dir: Path, job: dict) -> None:
             logger.warning("[%s] Draft %s preview failed", job["id"], draft_id[:8])
         data["preview_log"] = log[-PREVIEW_LOG_MAX:]
         draft_json.write_text(json.dumps(data, indent=2, default=str))
+
+        # Mirror the terminal preview state to ReleaseDraft:{id}/diagnostics
+        # so it survives a delivery-kid storage rebuild. ``ready`` and
+        # ``failed`` are both terminal — both worth snapshotting.
+        try:
+            import asyncio as _asyncio
+            _asyncio.create_task(snapshot_diagnostics_for_dict_async(draft_id, data))
+        except RuntimeError:
+            logger.debug("[%s] No running loop; skipping diagnostics snapshot", job["id"])
     except Exception as e:
         logger.error("[%s] Failed to update draft preview state: %s", job["id"], e)
 
