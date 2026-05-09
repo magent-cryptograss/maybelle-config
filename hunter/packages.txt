@@ -29,6 +29,7 @@ libcairo2
 libpango-1.0-0
 libasound2t64
 python3-psycopg2
+libpq-dev
 ca-certificates
 gnupg
 sudo
