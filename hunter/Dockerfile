@@ -8,7 +8,7 @@ COPY packages.txt /tmp/
 RUN apt-get update \
     && xargs -a /tmp/packages.txt apt-get install -y
 
-RUN mkdir /var/run/sshd
+RUN mkdir -p /var/run/sshd
 
 # Install code-server
 RUN curl -fsSL https://code-server.dev/install.sh | sh
