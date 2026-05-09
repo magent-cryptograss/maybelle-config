@@ -8,6 +8,13 @@ COPY packages.txt /tmp/
 RUN apt-get update \
     && xargs -a /tmp/packages.txt apt-get install -y
 
+# Generate a UTF-8 locale. mosh-server refuses to start without one, and
+# 26.04's base image ships without any locale generated. Setting LANG so
+# child processes default to UTF-8 too.
+RUN locale-gen en_US.UTF-8
+ENV LANG=en_US.UTF-8 \
+    LC_ALL=en_US.UTF-8
+
 RUN mkdir -p /var/run/sshd
 
 # Install code-server
