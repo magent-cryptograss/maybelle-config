@@ -20,3 +20,7 @@ pydub>=0.25.1
 
 # BitTorrent seeding
 libtorrent>=2.0.0
+
+# MediaWiki client — used by pickipedia_client to snapshot draft
+# diagnostics to ReleaseDraft:{id}/diagnostics on terminal state.
+mwclient>=0.10.1

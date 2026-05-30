@@ -136,6 +136,14 @@
                 - IPFS_GATEWAY_URL=https://{{ ipfs_gateway_domain }}
                 - STAGING_DIR=/staging
                 - COCONUT_API_KEY={{ coconut_api_key | default('') }}
+                # Pickipedia bot creds — used by pickipedia_client to mirror
+                # draft logs to ReleaseDraft:{id}/diagnostics so they survive
+                # a delivery-kid rebuild. Reuses the Magent@magent BotPassword
+                # already provisioned for the Blue Railroad import tool. When
+                # the password var is empty the client no-ops cleanly.
+                - PICKIPEDIA_URL={{ pickipedia_url | default('https://pickipedia.xyz') }}
+                - PICKIPEDIA_BOT_USER={{ pickipedia_bot_user | default('Magent@magent') }}
+                - PICKIPEDIA_BOT_PASSWORD={{ pickipedia_bot_password | default('') }}
               volumes:
                 - /mnt/storage-box/staging:/staging
               ports:

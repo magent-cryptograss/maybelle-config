@@ -21,6 +21,7 @@ from ..models.content import (
 from ..services import analyze, ipfs, transcode
 from ..services.coconut import submit_to_coconut, save_job, load_job
 from ..services.fsutil import safe_rmtree
+from ..services.pickipedia_client import snapshot_diagnostics_for_state_async
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,21 @@ def log_pre_handler_failure(draft_id: str, status_code: int,
                          draft_id[:8])
 
 
+def _fire_diagnostics_snapshot(state: ContentDraftState) -> None:
+    """Fire-and-forget snapshot of draft logs to ``ReleaseDraft:{id}/diagnostics``.
+
+    Called at every terminal-state transition so the upload/finalize/preview
+    log trail survives a delivery-kid rebuild. Swallows scheduling errors
+    (e.g. no running loop) so a wiki blip never masks the underlying
+    upload outcome the caller is about to surface.
+    """
+    try:
+        asyncio.create_task(snapshot_diagnostics_for_state_async(state))
+    except RuntimeError:
+        logger.debug("[content:%s] No running loop; skipping diagnostics snapshot",
+                     state.draft_id[:8])
+
+
 @router.post("/init", response_model=ContentDraftResponse)
 async def init_content_draft(
     wallet_address: str = Depends(require_auth),
@@ -273,6 +289,7 @@ async def create_content_draft(
             save_draft_state(draft_dir, state)
         except Exception:
             logger.exception("[content:%s] Failed to persist upload_log on error", draft_id[:8])
+        _fire_diagnostics_snapshot(state)
         return HTTPException(status_code=http_status, detail=message)
 
     if not files:
@@ -508,6 +525,7 @@ async def _submit_preview_transcode(
             save_draft_state(draft_dir, state)
         except Exception:
             pass
+        _fire_diagnostics_snapshot(state)
 
 
 def _should_use_coconut(request: ContentFinalizeRequest, settings: Settings) -> bool:
@@ -815,6 +833,14 @@ async def finalize_sse_generator(
         yield await send_event("error", {"stage": "exception", "message": str(e)})
 
     finally:
+        # Snapshot the final state to the wiki sub-page BEFORE we wipe
+        # draft.json on success. Once the rmtree below runs the in-memory
+        # ``state`` is the only copy of the finalize_log, so we have to
+        # mirror it now or never. On failure paths we also snapshot so
+        # the wiki has the latest log even if delivery-kid storage is
+        # later rebuilt.
+        _fire_diagnostics_snapshot(state)
+
         # Only wipe the draft dir on a fully successful pin. On failure we
         # keep draft.json (with its finalize_log) so the ReleaseDraft page
         # can show what went wrong, and the source bytes stay on disk for
