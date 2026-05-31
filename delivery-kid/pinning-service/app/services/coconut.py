@@ -146,14 +146,14 @@ async def submit_to_coconut(
         "webhook": webhook_url,
     }
 
+    # Coconut V2 wants HTTP Basic Auth (API key as username, empty password),
+    # not Bearer. With Bearer we got back "HTTP Basic: Access denied." 401s.
     async with httpx.AsyncClient(timeout=30.0) as client:
         resp = await client.post(
             COCONUT_API_URL,
             json=job_config,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
+            auth=(api_key, ""),
+            headers={"Content-Type": "application/json"},
         )
         resp.raise_for_status()
         return resp.json()
