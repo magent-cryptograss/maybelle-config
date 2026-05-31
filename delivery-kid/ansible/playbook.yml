@@ -186,6 +186,13 @@
         state: present
         recreate: "{{ 'always' if (rebuild_images | default(false) | bool) else 'auto' }}"
 
+    # Cap BuildKit cache so repeated --rebuild / build:always deploys don't
+    # accumulate (we hit a 28GB / 337-entry cache on 2026-05-30 that took
+    # the host to 100% disk and killed the next deploy). -f prunes dangling
+    # cache only — active layers stay reusable; --keep-storage caps total.
+    - name: Cap Docker BuildKit cache at 3GB
+      command: docker builder prune -f --keep-storage 3GB
+
     # Wait for IPFS container to be running (not API - that won't work until configured)
     - name: Wait for IPFS container to start
       command: docker inspect -f '{% raw %}{{.State.Running}}{% endraw %}' ipfs

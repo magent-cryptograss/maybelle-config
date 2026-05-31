@@ -66,6 +66,12 @@
     cmd: docker compose build
     chdir: /opt/pickipedia-docker
 
+# Cap BuildKit cache so repeated deploys don't accumulate unbounded.
+# -f prunes dangling cache only — active layers stay reusable;
+# --keep-storage caps total at 3GB.
+- name: Cap Docker BuildKit cache at 3GB
+  command: docker builder prune -f --keep-storage 3GB
+
 # Now the quick switchover — stop nginx, start container
 - name: Stop and disable nginx (replaced by Docker Apache)
   systemd:
