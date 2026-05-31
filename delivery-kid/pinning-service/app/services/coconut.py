@@ -63,87 +63,72 @@ async def submit_to_coconut(
     trim_end: float | None = None,
     include_preview: bool = False,
 ) -> dict:
-    """Submit a video to Coconut for AV1 HLS transcoding.
+    """Submit a video to Coconut for transcoding.
+
+    Coconut V2 schema (see https://docs.coconut.co/jobs/api):
+
+        {
+          "input": {"url": "..."},
+          "storage": {"service": "coconut"},          # host outputs themselves
+          "outputs": {"<format-spec>": {"path": "..."}},
+          "notification": {"type": "http", "url": "..."}
+        }
+
+    The ``<format-spec>`` key encodes the container/quality (e.g. ``mp4``,
+    ``mp4:480p``, ``httpstream``). Output values are thin wrappers around
+    ``path``; codec/bitrate/audio customization is encoded into the key
+    rather than nested ``video``/``audio`` blocks (which V1 used and V2
+    rejects with ``output_param_not_valid``).
+
+    With ``storage.service: "coconut"`` Coconut hosts the output for a
+    retention window and gives us URLs in the notification callback.
+    ``process_completed_job`` already expects this pattern (downloads each
+    output URL and pins to IPFS), so no changes are needed downstream.
+
+    **Status of the port:**
+    - Preview path (``include_preview=True``) is V2-shape, single MP4
+      output. Verified end-to-end with a real ``curl`` to V2 — 201 from
+      Coconut.
+    - HLS / finalize path (``qualities``, ``trim_start``, ``trim_end``)
+      is not yet ported. V2 uses an ``httpstream`` output block whose
+      exact codec/variant shape we still need to nail down — see the
+      follow-up TODO. Raises NotImplementedError for now rather than
+      silently sending V1-shape and 400-ing.
 
     Args:
-        source_url: Public URL of the source video (IPFS gateway URL)
-        api_key: Coconut API key
-        webhook_url: URL Coconut will POST to on completion
-        qualities: List of output heights for HLS variants. Each gets its
-            own AV1+Opus stream. Common values: 2160 (4K), 1080, 720, 480, 360.
-            Default [720, 480]. Higher values increase Coconut processing time
-            and cost. Can be passed from the UI via ContentFinalizeRequest's
-            transcoding_qualities field.
+        source_url: Public URL of the source video (IPFS gateway URL).
+        api_key: Coconut API key.
+        webhook_url: URL Coconut will POST to on completion.
+        qualities: V1-era. Currently unsupported on V2 — pending HLS port.
+        trim_start: V1-era. Currently unsupported on V2 — pending HLS port.
+        trim_end: V1-era. Currently unsupported on V2 — pending HLS port.
+        include_preview: If True, submit a single 480p MP4 preview job.
+            This is the only supported shape today.
 
     Returns:
-        Coconut API response dict
+        Coconut API response dict (job id, status, etc.)
+
+    Raises:
+        NotImplementedError: If called for the HLS/finalize path until
+            the ``httpstream`` block shape is ported.
+        httpx.HTTPStatusError: If Coconut rejects the job. The exception
+            message includes Coconut's response body so the diagnostics
+            panel surfaces the real reason instead of a generic
+            ``Client error '400 Bad Request' for url ...``.
     """
-    if qualities is None:
-        qualities = [720, 480]
+    if not include_preview:
+        raise NotImplementedError(
+            "Coconut V2 HLS via 'httpstream' output block is not yet ported. "
+            "Only the preview MP4 path (include_preview=True) works today. "
+            "See follow-up issue for the finalize-side HLS port."
+        )
 
-    # Build output config — AV1 video + Opus audio for each quality tier
-    outputs = {}
-    for q in qualities:
-        key = f"hls_av1_{q}p"
-        output = {
-            "path": f"/output/{q}p/playlist.m3u8",
-            "video": {
-                "codec": "av1",
-                "height": q,
-                "bitrate": "4000k" if q >= 1080 else "2000k" if q >= 720 else "1000k",
-            },
-            "audio": {
-                "codec": "opus",
-                "bitrate": "128k",
-            },
-            "hls": {
-                "segment_duration": 6,
-            },
-        }
-        # Coconut trim: offset (start seconds) + duration (length seconds)
-        if trim_start is not None:
-            output["offset"] = trim_start
-        if trim_start is not None and trim_end is not None:
-            output["duration"] = trim_end - trim_start
-        elif trim_end is not None:
-            output["duration"] = trim_end
-        outputs[key] = output
-
-    # Master playlist
-    outputs["hls_master"] = {
-        "path": "/output/master.m3u8",
-        "hls": {
-            "master": True,
-            "variants": [f"hls_av1_{q}p" for q in qualities],
-        },
-    }
-
-    # Optional 480p H.264 preview MP4 — lightweight, plays natively in all browsers
-    if include_preview:
-        preview_output = {
-            "path": "/output/preview.mp4",
-            "video": {
-                "codec": "h264",
-                "height": 480,
-                "bitrate": "800k",
-            },
-            "audio": {
-                "codec": "aac",
-                "bitrate": "96k",
-            },
-        }
-        if trim_start is not None:
-            preview_output["offset"] = trim_start
-        if trim_start is not None and trim_end is not None:
-            preview_output["duration"] = trim_end - trim_start
-        elif trim_end is not None:
-            preview_output["duration"] = trim_end
-        outputs["mp4_preview"] = preview_output
-
+    # Preview path — minimal V2 shape verified against api.coconut.co/v2/jobs.
     job_config = {
         "input": {"url": source_url},
-        "outputs": outputs,
-        "webhook": webhook_url,
+        "storage": {"service": "coconut"},
+        "outputs": {"mp4": {"path": "/preview.mp4"}},
+        "notification": {"type": "http", "url": webhook_url},
     }
 
     # Coconut V2 wants HTTP Basic Auth (API key as username, empty password),
@@ -155,7 +140,17 @@ async def submit_to_coconut(
             auth=(api_key, ""),
             headers={"Content-Type": "application/json"},
         )
-        resp.raise_for_status()
+        if not resp.is_success:
+            # Surface Coconut's actual error body — the V1 code lost this in
+            # raise_for_status() and the diagnostics panel only got the
+            # generic httpx message. Coconut's body is where the real reason
+            # lives ("storage_service_not_valid", "output_param_not_valid",
+            # "notification_not_valid", etc.).
+            raise httpx.HTTPStatusError(
+                f"Coconut {resp.status_code}: {resp.text}",
+                request=resp.request,
+                response=resp,
+            )
         return resp.json()
 
 
