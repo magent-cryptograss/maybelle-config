@@ -51,3 +51,9 @@
   command: docker images magenta-arthel:latest --format "{% raw %}{{.Repository}}:{{.Tag}}{% endraw %}"
   register: image_check
   failed_when: "'magenta-arthel:latest' not in image_check.stdout"
+
+# Cap BuildKit cache so repeated rebuilds (especially the periodic base-image
+# bumps) don't accumulate unbounded. -f prunes dangling cache only —
+# active layers stay reusable; --keep-storage caps total at 3GB.
+- name: Cap Docker BuildKit cache at 3GB
+  command: docker builder prune -f --keep-storage 3GB
