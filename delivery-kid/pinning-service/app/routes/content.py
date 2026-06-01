@@ -623,27 +623,26 @@ async def finalize_sse_generator(
         video_files = [f for f in state.files if f.media_type == "video"]
         wants_transcode = len(state.files) == 1 and video_files and _should_transcode_video(request)
 
-        # === Fast path: preview already done, no trim ===
-        if wants_transcode and state.preview_cid and not has_trim:
-            logger.info("[content:%s] Using existing preview HLS: %s", draft_id[:8], state.preview_cid)
-            yield await send_event("progress", {
-                "stage": "transcode",
-                "message": "AV1 HLS already transcoded — using preview.",
-                "progress": 80
-            })
-
-            gateway_url = f"{settings.ipfs_gateway_url}/ipfs/{state.preview_cid}"
-
-            state.status = "finalized"
-            yield await send_event("complete", {
-                "cid": state.preview_cid,
-                "gateway_url": gateway_url,
-                "title": request.title,
-                "file_type": request.file_type,
-                "subsequent_to": request.subsequent_to,
-            })
-            pin_success = True
-            return
+        # === Fast path DISABLED for V2 migration ===
+        # Pre-V2-migration this branch reused state.preview_cid as the final
+        # Release CID. That was safe when preview produced full HLS variants.
+        #
+        # Under V2 the preview path now submits a single 'mp4' output
+        # (rendered inline on the wiki ReleaseDraft page), and the finalize
+        # path submits an 'httpstream' HLS tree — they produce different
+        # artifacts. Reusing preview_cid here would put an MP4 at the
+        # Release CID instead of HLS variants. Worse, when the V2 webhook
+        # download path hadn't been ported, preview_cid pointed at an IPFS
+        # dir containing only metadata.json — finalize blindly reused that
+        # and minted Release pages with no playable content (the Nine
+        # Pound Hammer regression).
+        #
+        # Always go through the finalize transcode path until we have a
+        # reliable signal that preview_cid points at finalize-grade HLS.
+        # When/if Coconut's V2 schema lets us produce HLS at preview time
+        # too, this fast path can be reinstated guarded by that.
+        # if wants_transcode and state.preview_cid and not has_trim:
+        #     ... (see git blame for the V1-era body)
 
         # === Coconut cloud transcoding (with trim, or no preview available) ===
         if wants_transcode and _should_use_coconut(request, settings):
