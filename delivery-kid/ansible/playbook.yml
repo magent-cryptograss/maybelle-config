@@ -142,8 +142,14 @@
                 # already provisioned for the Blue Railroad import tool. When
                 # the password var is empty the client no-ops cleanly.
                 - PICKIPEDIA_URL={{ pickipedia_url | default('https://pickipedia.xyz') }}
-                - PICKIPEDIA_BOT_USER={{ pickipedia_bot_user | default('Magent@magent') }}
-                - PICKIPEDIA_BOT_PASSWORD={{ pickipedia_bot_password | default('') }}
+                # Source the bot creds from the vault keys that maybelle's
+                # audit script already uses (BLUERAILROAD_BOT_*). Same bot,
+                # same password — there's no separate "pickipedia bot" in
+                # vault and the previously-referenced pickipedia_bot_*
+                # vault keys silently fell through to '', leaving the
+                # pickipedia_client's snapshot path a permanent no-op.
+                - PICKIPEDIA_BOT_USER={{ BLUERAILROAD_BOT_USERNAME | default('Magent@magent') }}
+                - PICKIPEDIA_BOT_PASSWORD={{ BLUERAILROAD_BOT_PASSWORD | default('') }}
               volumes:
                 - /mnt/storage-box/staging:/staging
               ports:
