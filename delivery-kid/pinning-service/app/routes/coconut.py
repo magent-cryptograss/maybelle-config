@@ -67,6 +67,67 @@ def _append_preview_log(staging_dir: Path, draft_id: str, message: str,
         logger.error("[%s] Failed to append preview log: %s", draft_id[:8], e)
 
 
+def _update_draft_finalize(staging_dir: Path, job: dict) -> None:
+    """Update a content draft's finalize state after Coconut webhook.
+
+    Mirrors ``_update_draft_preview`` but for the finalize-side job:
+    sets ``state.status = 'finalized'`` + ``state.final_cid``, appends to
+    ``finalize_log`` so the wiki diagnostics panel can render the
+    completion, and fires the wiki-snapshot hook on the terminal state.
+
+    Without this, finalize jobs would pin HLS to IPFS but never write
+    anything back to the draft — the wiki page would stay stuck on
+    'finalizing' forever and the Blue Railroad Imports bot would have no
+    'finalized' state to react to, so no Release page would ever appear.
+    """
+    draft_id = job["draftId"]
+    draft_json = staging_dir / "drafts" / draft_id / "draft.json"
+    if not draft_json.exists():
+        logger.warning("[%s] Finalize draft not found: %s", job["id"], draft_id)
+        return
+    try:
+        data = json.loads(draft_json.read_text())
+        log = data.get("finalize_log") or []
+        now = datetime.now(timezone.utc).isoformat()
+        if job["status"] == "complete" and job.get("hlsCid"):
+            cid = job["hlsCid"]
+            data["status"] = "finalized"
+            data["final_cid"] = cid
+            data["finalized_at"] = now
+            log.append({
+                "ts": now,
+                "stage": "complete",
+                "message": f"Finalize complete · HLS pinned ({cid[:12]}…)",
+                "progress": 100,
+            })
+            logger.info("[%s] Draft %s finalized: hls=%s",
+                        job["id"], draft_id[:8], cid)
+        else:
+            data["status"] = "finalize_failed"
+            err = job.get("error") or "Unknown error"
+            log.append({
+                "ts": now,
+                "stage": "error",
+                "message": f"Finalize transcode failed: {err}",
+                "error": err,
+            })
+            logger.warning("[%s] Draft %s finalize failed: %s",
+                           job["id"], draft_id[:8], err)
+        # Match the cap used by _append_finalize_log in routes/content.py.
+        data["finalize_log"] = log[-200:]
+        draft_json.write_text(json.dumps(data, indent=2, default=str))
+
+        # Snapshot the terminal finalize state to the wiki sub-page so it
+        # survives a delivery-kid storage rebuild.
+        try:
+            import asyncio as _asyncio
+            _asyncio.create_task(snapshot_diagnostics_for_dict_async(draft_id, data))
+        except RuntimeError:
+            logger.debug("[%s] No running loop; skipping diagnostics snapshot", job["id"])
+    except Exception as e:
+        logger.error("[%s] Failed to update draft finalize state: %s", job["id"], e)
+
+
 def _update_draft_preview(staging_dir: Path, job: dict) -> None:
     """Update a content draft's preview state after Coconut webhook."""
     draft_id = job["draftId"]
@@ -283,9 +344,14 @@ async def webhook_coconut(request: Request, settings: Settings = Depends(get_set
 
         save_job(staging_dir, job_id, job)
 
-        # If this is a preview job, update the draft state
-        if job.get("isPreview") and job.get("draftId"):
-            _update_draft_preview(staging_dir, job)
+        # Mirror the job result back into the draft so the wiki page can
+        # render it. Two-headed: preview-side updates preview_status /
+        # preview_cid; finalize-side updates status / final_cid.
+        if job.get("draftId"):
+            if job.get("isPreview"):
+                _update_draft_preview(staging_dir, job)
+            else:
+                _update_draft_finalize(staging_dir, job)
         return {"received": True}
 
     except Exception as e:

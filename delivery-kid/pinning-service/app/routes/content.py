@@ -686,6 +686,12 @@ async def finalize_sse_generator(
                     "id": job_id,
                     "coconutJobId": coconut_job_id,
                     "status": "processing",
+                    # draftId lets the Coconut webhook handler map back to
+                    # the right draft when the job completes — otherwise the
+                    # webhook pins HLS but never updates state.final_cid /
+                    # state.status, leaving the wiki page stuck on
+                    # "finalizing" forever (preview path already does this).
+                    "draftId": draft_id,
                     "keepOriginal": request.preserve_original,
                     "title": request.title,
                     "fileType": request.file_type,
