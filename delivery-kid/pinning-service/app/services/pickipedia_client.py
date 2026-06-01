@@ -32,6 +32,10 @@ logger = logging.getLogger(__name__)
 _site = None
 _site_lock = Lock()
 
+# Tracks whether we've already complained about missing creds, so the log
+# warns exactly once per process rather than on every snapshot attempt.
+_warned_missing_creds = False
+
 
 def _parse_host(url: str) -> tuple[str, str]:
     """Split a wiki URL into (host, scheme) for mwclient.Site."""
@@ -44,13 +48,24 @@ def _parse_host(url: str) -> tuple[str, str]:
 
 def _get_site():
     """Return a logged-in mwclient.Site, or None if creds aren't configured."""
-    global _site
+    global _site, _warned_missing_creds
     if _site is not None:
         return _site
 
     user = os.environ.get("PICKIPEDIA_BOT_USER", "Magent@magent")
     password = os.environ.get("PICKIPEDIA_BOT_PASSWORD")
     if not password:
+        # Warn once per process. Previously this branch was silent and the
+        # snapshot path would no-op without explanation — we found it the
+        # hard way after a deploy left PICKIPEDIA_BOT_PASSWORD empty in the
+        # container env. One log line makes the silent failure visible.
+        if not _warned_missing_creds:
+            logger.warning(
+                "pickipedia_client: PICKIPEDIA_BOT_PASSWORD is empty — wiki "
+                "snapshots will silently no-op. Set the env var (sourced "
+                "from vault) to enable diagnostics-page snapshots."
+            )
+            _warned_missing_creds = True
         return None
 
     url = os.environ.get("PICKIPEDIA_URL", "https://pickipedia.xyz")
