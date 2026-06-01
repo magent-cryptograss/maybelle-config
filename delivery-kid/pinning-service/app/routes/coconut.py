@@ -94,6 +94,23 @@ def _update_draft_finalize(staging_dir: Path, job: dict) -> None:
             data["status"] = "finalized"
             data["final_cid"] = cid
             data["finalized_at"] = now
+            # Narrate each webhook-side step we actually did so the wiki
+            # diagnostics panel doesn't have a 2-minute gap between
+            # "transcoding-submitted" and "complete". The webhook handler
+            # itself only writes to draft.json once, so the multiple
+            # entries below are persisted in one save (we don't have a
+            # streaming mechanism back to the user's browser; the panel
+            # picks them all up on its next poll).
+            log.append({
+                "ts": now,
+                "stage": "webhook",
+                "message": "Coconut callback received — HLS ready",
+            })
+            log.append({
+                "ts": now,
+                "stage": "pin",
+                "message": f"HLS pinned to IPFS as {cid}",
+            })
             log.append({
                 "ts": now,
                 "stage": "complete",
@@ -124,6 +141,28 @@ def _update_draft_finalize(staging_dir: Path, job: dict) -> None:
             _asyncio.create_task(snapshot_diagnostics_for_dict_async(draft_id, data))
         except RuntimeError:
             logger.debug("[%s] No running loop; skipping diagnostics snapshot", job["id"])
+
+        # Update the ReleaseDraft:{id} wiki page YAML so the Blue Railroad
+        # Imports bot's find_cid_from_history picks up the new final_cid
+        # on its next cron run and creates the Release:{cid} page.
+        # Pre-V2 this edit was done by the browser-side JS when the SSE
+        # delivered a 'complete' event; the slow Coconut path closes the
+        # SSE long before completion, so we write it here instead.
+        if data.get("status") == "finalized" and data.get("final_cid"):
+            try:
+                import asyncio as _asyncio
+                from ..services.pickipedia_client import (
+                    write_finalized_to_releasedraft_async,
+                )
+                _asyncio.create_task(write_finalized_to_releasedraft_async(
+                    draft_id, data["final_cid"], data["finalized_at"],
+                ))
+            except RuntimeError:
+                logger.debug("[%s] No running loop; skipping ReleaseDraft YAML update",
+                             job["id"])
+            except Exception as e:
+                logger.warning("[%s] Failed to schedule ReleaseDraft YAML update: %s",
+                               job["id"], e)
     except Exception as e:
         logger.error("[%s] Failed to update draft finalize state: %s", job["id"], e)
 

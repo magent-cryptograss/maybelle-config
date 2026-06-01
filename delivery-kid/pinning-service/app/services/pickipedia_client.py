@@ -159,3 +159,89 @@ def snapshot_diagnostics_for_dict_async(draft_id: str, draft_data: dict):
         "preview_log": draft_data.get("preview_log") or [],
     }
     return asyncio.to_thread(snapshot_diagnostics, draft_id, payload)
+
+
+def write_finalized_to_releasedraft(
+    draft_id: str,
+    final_cid: str,
+    finalized_at: str,
+) -> bool:
+    """Edit the ``ReleaseDraft:{draft_id}`` wiki page YAML to mark it finalized.
+
+    Pre-V2-Coconut-migration, the browser-side JS handled this edit when
+    the finalize SSE delivered a ``complete`` event. For the slow Coconut
+    path that event never fires (the SSE closes after submission and the
+    user's browser doesn't see the eventual completion), so we write from
+    the webhook side instead.
+
+    The edit:
+      - Loads the current YAML
+      - Sets ``status: finalized``, ``final_cid: <cid>``, ``finalized_at: <iso>``
+      - Saves with summary ``Finalized: pinned to IPFS as <cid>``
+
+    The summary line is what the Blue Railroad Imports bot's
+    ``find_cid_from_history`` greps for to trigger Release page creation
+    on its next cron run.
+
+    Returns True if the edit succeeded, False if creds are missing or the
+    write failed. Never raises.
+    """
+    site = _get_site()
+    if site is None:
+        return False
+
+    try:
+        import yaml as _yaml
+    except ImportError:
+        logger.error("pickipedia_client: PyYAML not installed; cannot edit ReleaseDraft YAML")
+        return False
+
+    title = f"ReleaseDraft:{draft_id}"
+    try:
+        page = site.pages[title]
+        if not page.exists:
+            logger.warning("pickipedia_client: %s does not exist; cannot mark finalized", title)
+            return False
+
+        existing_text = page.text()
+        try:
+            data = _yaml.safe_load(existing_text) or {}
+        except _yaml.YAMLError as e:
+            logger.error("pickipedia_client: failed to parse %s YAML: %s", title, e)
+            return False
+
+        if not isinstance(data, dict):
+            logger.error("pickipedia_client: %s YAML is not a mapping; refusing to edit", title)
+            return False
+
+        data["status"] = "finalized"
+        data["final_cid"] = final_cid
+        data["finalized_at"] = finalized_at
+
+        new_text = _yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+        summary = f"Finalized: pinned to IPFS as {final_cid}"
+
+        if new_text.strip() == existing_text.strip():
+            return True
+
+        page.save(new_text, summary=summary)
+        logger.info("pickipedia_client: marked %s finalized (final_cid=%s)", title, final_cid)
+        return True
+    except Exception as e:
+        logger.error("pickipedia_client: failed to mark %s finalized: %s", title, e)
+        return False
+
+
+async def write_finalized_to_releasedraft_async(
+    draft_id: str,
+    final_cid: str,
+    finalized_at: str,
+):
+    """Async wrapper for ``write_finalized_to_releasedraft``.
+
+    Runs the sync mwclient calls in a thread so the FastAPI event loop
+    isn't blocked while the wiki round-trip happens.
+    """
+    return await asyncio.to_thread(
+        write_finalized_to_releasedraft, draft_id, final_cid, finalized_at,
+    )
