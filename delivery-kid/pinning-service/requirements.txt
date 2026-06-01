@@ -24,3 +24,7 @@ libtorrent>=2.0.0
 # MediaWiki client — used by pickipedia_client to snapshot draft
 # diagnostics to ReleaseDraft:{id}/diagnostics on terminal state.
 mwclient>=0.10.1
+
+# YAML parser — used by pickipedia_client to read/update the
+# ReleaseDraft:{id} wiki page YAML when finalize completes.
+PyYAML>=6.0
